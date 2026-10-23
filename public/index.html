@@ -3110,7 +3110,7 @@
                     if (v.b?.pos?.[id]) tile = v.b.pos[id];
                     const bpend = Boolean(LAND.pend && LAND.pend.unit === id);
                     if (bpend) tile = LAND.pend.tile;
-                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null,
+                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null, caps: l.caps || null,
                         multi: l.figs / Math.max(1, l.qty) > 1, gen: isGen, near, chev: v.chev?.[l.owner] === id, alive: v.b?.alive?.[id] ?? null });
                 }
             }
@@ -3589,7 +3589,19 @@
                     c.beginPath(); c.moveTo(t.x - R, t.y); c.lineTo(t.x + R, t.y); c.moveTo(t.x, t.y - R); c.lineTo(t.x, t.y + R); c.stroke();
                 }
                 // Destinations possibles pour un déplacement en cours de choix.
-                if (LAND.pick) {
+                if (LAND.reach && LAND.view.phase === 'orders') {
+                    const ru = byId.get(LAND.reach.unit);
+                    c.lineWidth = R * 0.12; c.strokeStyle = LAND.reach.type === 'marche' ? 'rgba(123,31,162,1)' : 'rgba(46,160,67,1)';
+                    for (const k of LAND.reach.tiles) { if (k === ru?.tile) continue; const q = cen(k); hexPathAt(c, q.x, q.y, R * 0.86); c.stroke(); }
+                    if (ru?.tile) { const q = cen(ru.tile); c.lineWidth = R * 0.14; c.strokeStyle = '#111'; hexPathAt(c, q.x, q.y, R * 0.96); c.stroke(); }
+                }
+                if (LAND.pick?.type === 'charge') {
+                    const pu = byId.get(LAND.pick.unit);
+                    if (pu?.tile) {
+                        c.lineWidth = R * 0.14; c.strokeStyle = '#d32f2f';
+                        for (const t of new Set(LAND.units.filter((x) => x.team && x.team !== pu.team && x.tile && hexDist(pu.tile, x.tile) <= LAND.pick.max).map((x) => x.tile))) { const q = cen(t); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
+                    }
+                } else if (LAND.pick) {
                     const pu = byId.get(LAND.pick.unit);
                     if (pu?.tile) {
                         const [pc, pr] = keyToHex(pu.tile);
@@ -3665,8 +3677,27 @@
                 c.stroke();
                 c.restore();
             };
-            const taken = []; // rectangles écran déjà occupés par des étiquettes : on décale les colonnes pour qu'elles ne se chevauchent pas
-            for (const [key, list] of [...byTile].sort((a, b) => b[1].length - a[1].length)) {
+            // Mise en page sans chevauchement (repère écran) : les groupes d'unités (colonnes) sont placés d'abord, puis les étiquettes seules.
+            // Une étiquette qui gênerait une voisine est écartée au plus près et reliée à sa tuile par un trait.
+            const taken = []; // rectangles écran déjà occupés
+            const S = VW.scale;
+            const rectAt = (spx, spy, ox, oy, w, h) => ({ x0: spx + (ox - w / 2) * S, x1: spx + (ox + w / 2) * S, y0: spy + (oy - h / 2) * S, y1: spy + (oy + h / 2) * S });
+            const overlap = (a, b) => a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+            const inView = (r) => r.x0 >= 0 && r.x1 <= VW.W;
+            const reserved = new Map(); // emplacement central des étiquettes seules, pas encore posées
+            for (const [key, list] of byTile) {
+                if (list.length !== 1) continue;
+                const [rc, rr] = keyToHex(key);
+                const rp = hexCenter(rc, rr);
+                const rs = VW.toScreen(rp.x, rp.y);
+                reserved.set(key, rectAt(rs.x, rs.y, 0, 0, unitW, chipH));
+            }
+            const orderedTiles = [...byTile].sort((a, b) => {
+                const [ac, ar] = keyToHex(a[0]);
+                const [bc, br] = keyToHex(b[0]);
+                return (b[1].length > 1) - (a[1].length > 1) || b[1].length - a[1].length || ar - br || ac - bc;
+            });
+            for (const [key, list] of orderedTiles) {
                 list.sort((a, b) => a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name) || a.idx - b.idx);
                 const [tc, tr] = keyToHex(key);
                 const { x, y } = hexCenter(tc, tr);
@@ -3789,31 +3820,74 @@
                     LAND.hits.push({ unit: u, units: [u], flag, chev, cross, x: sp.x + (ox - w / 2) * VW.scale, y: sp.y + (oy - chipH / 2) * VW.scale, w: w * VW.scale, h: chipH * VW.scale });
                 };
                 if (list.length === 1) {
-                    place(list[0], 0, 0, unitW);
-                    taken.push({ x0: sp.x - (unitW / 2) * VW.scale, x1: sp.x + (unitW / 2) * VW.scale, y0: sp.y - (chipH / 2) * VW.scale, y1: sp.y + (chipH / 2) * VW.scale });
+                    reserved.delete(key);
+                    const others = [...reserved.values()];
+                    let ox = 0, oy = 0;
+                    if (taken.some((t) => overlap(rectAt(sp.x, sp.y, 0, 0, unitW, chipH), t))) {
+                        // Positions voisines possibles (à côté de la tuile, au-dessus, en dessous), du plus proche au plus lointain.
+                        const gapY = chipH * 1.12;
+                        const sideX = R * 0.95 + unitW / 2;
+                        const cand = [];
+                        for (const sx of [-1, 1]) for (const k of [0, 1, -1, 2, -2, 3, -3]) cand.push([sx * sideX, k * gapY]);
+                        for (const sy of [-1, 1]) for (const k of [0, 1, -1]) cand.push([k * unitW * 0.6, sy * (R * 0.9 + chipH / 2)]);
+                        for (const sx of [-1, 1]) for (const k of [0, 1, -1, 2, -2]) cand.push([sx * (sideX + unitW + R * 0.15), k * gapY]);
+                        cand.sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]));
+                        const okAt = (cx, cy, strict) => {
+                            const r = rectAt(sp.x, sp.y, cx, cy, unitW, chipH);
+                            return !taken.some((t) => overlap(r, t)) && (!strict || (inView(r) && !others.some((t) => overlap(r, t))));
+                        };
+                        const pick = cand.find(([cx, cy]) => okAt(cx, cy, true)) || cand.find(([cx, cy]) => okAt(cx, cy, false));
+                        if (pick) { [ox, oy] = pick; }
+                    }
+                    if (ox || oy) {
+                        // trait de liaison entre la tuile et son étiquette écartée
+                        const ex = Math.max(ox - unitW / 2, Math.min(0, ox + unitW / 2));
+                        const ey = Math.max(oy - chipH / 2, Math.min(0, oy + chipH / 2));
+                        c.save();
+                        c.strokeStyle = '#222';
+                        c.lineWidth = R * 0.07;
+                        c.beginPath(); c.moveTo(0, 0); c.lineTo(ex, ey); c.stroke();
+                        c.fillStyle = '#222';
+                        c.beginPath(); c.arc(0, 0, R * 0.12, 0, Math.PI * 2); c.fill();
+                        c.restore();
+                    }
+                    place(list[0], ox, oy, unitW);
+                    taken.push(rectAt(sp.x, sp.y, ox, oy, unitW, chipH));
                 } else {
                     const cols = Math.ceil(list.length / PER_COL);
                     const rows = Math.ceil(list.length / cols);
                     const gap = chipH * 1.12;
                     const colGap = unitW + R * 0.2;
-                    const x0 = side * (R * 1.15 + unitW / 2);
                     const top0 = -((rows - 1) * gap) / 2;
-                    // Décalage vertical de la colonne s'il y a déjà des étiquettes à cet endroit.
-                    const widthW = R * 1.15 + unitW * cols + R * 0.2 * (cols - 1);
-                    const hitsTaken = (shift) => {
-                        const rx0 = side > 0 ? sp.x + R * 1.15 * VW.scale : sp.x - widthW * VW.scale;
-                        const rx1 = side > 0 ? sp.x + widthW * VW.scale : sp.x - R * 1.15 * VW.scale;
-                        const ry0 = sp.y + (top0 + shift - chipH / 2) * VW.scale;
-                        const ry1 = sp.y + (top0 + shift + (rows - 1) * gap + chipH / 2) * VW.scale;
-                        return taken.some((t) => rx0 < t.x1 && rx1 > t.x0 && ry0 < t.y1 && ry1 > t.y0) ? null : { x0: rx0, x1: rx1, y0: ry0, y1: ry1 };
-                    };
                     const stepY = (rows + 0.5) * gap;
-                    let shift = 0;
-                    let box = hitsTaken(0);
-                    for (let k = 1; !box && k <= 6; k++) {
-                        for (const sgn of [-1, 1]) { box = hitsTaken(sgn * Math.ceil(k / 2) * stepY * 0.55); if (box) { shift = sgn * Math.ceil(k / 2) * stepY * 0.55; break; } }
+                    // Candidats : côté préféré puis opposé, décalages verticaux croissants, puis colonnes plus éloignées.
+                    const boxFor = (sd, sh, push) => {
+                        const bx0 = sd * (R * 1.15 + unitW / 2 + push * (unitW * cols + R * 0.3));
+                        const wCols = unitW * cols + R * 0.2 * (cols - 1);
+                        const cx = bx0 + sd * (wCols - unitW) / 2;
+                        return { sd, sh, push, x0: bx0, r: rectAt(sp.x, sp.y, cx, top0 + sh + ((rows - 1) * gap) / 2, wCols + R * 0.3, (rows - 1) * gap + chipH) };
+                    };
+                    const others = [...reserved.values()];
+                    const shifts = [0];
+                    for (let k = 1; k <= 8; k++) shifts.push(k * stepY * 0.5, -k * stepY * 0.5);
+                    let chosen = null;
+                    search: for (const strict of [true, false]) {
+                        for (const push of [0, 1, 2]) {
+                            for (const sh of shifts) {
+                                for (const sd of [side, -side]) {
+                                    const b = boxFor(sd, sh, push);
+                                    if (taken.some((t) => overlap(b.r, t))) continue;
+                                    if (strict && (!inView(b.r) || others.some((t) => overlap(b.r, t)))) continue;
+                                    chosen = b; break search;
+                                }
+                            }
+                        }
                     }
-                    if (!box) box = hitsTaken(0) || { x0: sp.x, x1: sp.x, y0: sp.y, y1: sp.y };
+                    if (!chosen) chosen = boxFor(side, 0, 0);
+                    side = chosen.sd;
+                    const shift = chosen.sh;
+                    const x0 = chosen.x0;
+                    const box = chosen.r;
                     taken.push(box);
                     const top = top0 + shift;
                     c.beginPath();
@@ -4001,7 +4075,11 @@
         el.canvas.addEventListener('pointerdown', (e) => {
             if (!landOn() || (e.pointerType === 'mouse' && e.button !== 0)) return;
             const rect = el.canvas.getBoundingClientRect();
-            if (LAND.pick) { e.stopImmediatePropagation(); e.preventDefault(); handlePick(tileKeyAt(e.clientX, e.clientY)); return; }
+            if (LAND.pick) {
+                e.stopImmediatePropagation(); e.preventDefault();
+                if (LAND.pick.type === 'charge') return handleChargePick(tokenAt(e.clientX - rect.left, e.clientY - rect.top)?.unit, tileKeyAt(e.clientX, e.clientY));
+                handlePick(tileKeyAt(e.clientX, e.clientY)); return;
+            }
             if (LAND.pend) {
                 const px = e.clientX - rect.left, py = e.clientY - rect.top;
                 const hd = LAND.pendHandles.find((h) => Math.hypot(h.x - px, h.y - py) <= h.r);
@@ -4012,10 +4090,13 @@
             if (!unit) {
                 if (LAND.genMode) { LAND.genMode = false; renderUnitBar(); }
                 if (LAND.preview) { LAND.preview = null; hideRangeInfo(); requestDraw(); }
+                if (LAND.reach) { LAND.reach = null; requestDraw(); }
                 LAND.tap = { x: e.clientX, y: e.clientY, t: performance.now(), id: e.pointerId };
                 return;
             }
-            const open = selectorsOpen() || LAND.simOn || batTurn();
+            // Pose des ordres : appui long sur une de mes unités = fenêtre des ordres de cette unité (la carte ne bouge pas sous le doigt).
+            const orderMine = LAND.view.phase === 'orders' && ciEq(unit.owner, state.username);
+            const open = selectorsOpen() || LAND.simOn || batTurn() || orderMine;
             const secondTap = LAND.lastTap && LAND.lastTap.id === unit.id && performance.now() - LAND.lastTap.t < 380;
             // Sélecteurs repliés : le toucher sur une unité laisse la carte se déplacer (appui long = portée, double toucher = fiche).
             if (open || secondTap) {
@@ -4093,7 +4174,11 @@
             if (LAND.preview && !(LAND.simOn && LAND.preview.unit.id === unit.id)) { LAND.preview = null; hideRangeInfo(); requestDraw(); }
             const press = { unit, units: hit.units, x: e.clientX, y: e.clientY, pid: e.pointerId, moved: false, long: false, timer: null };
             press.timer = setTimeout(() => {
-                if (LAND.press === press && !press.moved && !LAND.drag) { press.long = true; showPreview(unit); if (LAND.preview) { LAND.pressHide = unit.id; requestDraw(); } }
+                if (LAND.press === press && !press.moved && !LAND.drag) {
+                    press.long = true;
+                    if (orderMine) { navigator.vibrate?.(30); openOrderDialog(unit.id); return; }
+                    showPreview(unit); if (LAND.preview) { LAND.pressHide = unit.id; requestDraw(); }
+                }
             }, 450);
             LAND.press = press;
         }, true);
@@ -4308,8 +4393,11 @@
             return ((Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 3)) % 6) + 6) % 6;
         }
 
+        // Orientation proposée : celle déjà choisie si le joueur repositionne l'unité (avant validation), sinon son orientation actuelle
+        // (déplacements), sinon face à l'adversaire le plus proche (première pose).
         function openPend(unit, key) {
-            LAND.pend = { unit: unit.id, tile: key, orient: defaultOrient(unit, key) };
+            const keep = LAND.pend && LAND.pend.unit === unit.id ? LAND.pend.orient : (Number.isInteger(unit.orient) ? unit.orient : null);
+            LAND.pend = { unit: unit.id, tile: key, orient: keep ?? defaultOrient(unit, key) };
             LAND.units = buildUnits(LAND.view);
             updateBatUI();
             requestDraw();
@@ -4353,27 +4441,55 @@
             sendOrder(u, { type: pk.type, tile: key });
         }
 
-        function sendOrder(u, order) {
-            return landEmit('battle-order', { unit: u.id, order }).then((r) => { if (r.success) toast(order ? 'Ordre enregistré.' : 'Ordre effacé.'); return r; });
+        // Charge : le joueur touche l'unité adverse sur la carte, puis confirme.
+        function startChargePick(u) {
+            const gord = LAND.view.b?.gorders?.[myKey()];
+            const max = gord === 'charge' ? 7 : 5;
+            if (!LAND.units.some((e) => e.team && e.team !== u.team && e.tile && hexDist(u.tile, e.tile) <= max)) return toast(`Aucune unité adverse à ${max} hexagones ou moins.`, true);
+            LAND.pick = { unit: u.id, type: 'charge', max };
+            updateBatUI();
+            requestDraw();
+        }
+        function handleChargePick(hitUnit, key) {
+            const pk = LAND.pick;
+            const u = LAND.units.find((x) => x.id === pk?.unit);
+            if (!u?.tile) { LAND.pick = null; return updateBatUI(); }
+            const foe = (x) => x && x.team && x.team !== u.team && x.tile;
+            const cands = foe(hitUnit) ? [hitUnit] : LAND.units.filter((x) => foe(x) && x.tile === key);
+            if (!cands.length) return toast('Touchez une unité adverse (cercles rouges).', true);
+            const inRange = cands.filter((x) => hexDist(u.tile, x.tile) <= pk.max);
+            if (!inRange.length) return toast(`Cible trop loin : ${pk.max} hexagones au plus.`, true);
+            const confirm = (t) => landingDialog('Confirmer la charge', `<p>${unitLbl(u)} charge <b>${unitLbl(t)}</b> (${t.owner}) à ${hexDist(u.tile, t.tile)} hexagones ?</p>`, [
+                { label: '⚔️ Confirmer la charge', cls: 'btn-primary', fn: () => { LAND.pick = null; updateBatUI(); requestDraw(); sendOrder(u, { type: 'charge', target: t.id }); } },
+                { label: 'Choisir une autre cible', keep: false },
+                { label: 'Annuler la charge', fn: () => { LAND.pick = null; updateBatUI(); requestDraw(); } }
+            ]);
+            if (inRange.length === 1) return confirm(inRange[0]);
+            landingDialog('Quelle unité charger ?', '<p>Plusieurs unités adverses sur cette tuile.</p>', [...inRange.map((t) => ({ label: `${unitLbl(t)} · ${t.owner}`, cls: 'btn-dark', fn: () => confirm(t) })), { label: 'Annuler' }]);
         }
 
-        function orderText(o) {
-            if (!o) return '— aucun ordre (reste en place)';
+        function sendOrder(u, order) {
+            return landEmit('battle-order', { unit: u.id, order }).then((r) => {
+                if (r.success) toast(order ? 'Ordre enregistré.' : 'Ordre effacé.');
+                if (r.success && order && (order.type === 'depl' || order.type === 'marche')) showReach(u, order.type);
+                else if (LAND.reach) { LAND.reach = null; requestDraw(); }
+                return r;
+            });
+        }
+        // Portée réelle d'un ordre de déplacement (trajet compris : forêt et marécage +1, montagne, eau, adversaires) : tuiles cerclées de vert.
+        function showReach(u, type) {
+            request('battle-reach', { unit: u.id, type }).then((r) => {
+                if (!r.success) return;
+                LAND.reach = { unit: u.id, type, tiles: r.tiles || [] };
+                requestDraw();
+            });
+        }
+
+        function orderText(o, uid) {
+            if (!o) return '<b style="color:#c62828">⚠️ aucun ordre (obligatoire)</b>';
             const tgt = o.target ? LAND.units.find((x) => x.id === o.target) : null;
             const tl = tgt ? `${unitLbl(tgt)} (${tgt.owner})` : '?';
-            return { charge: `⚔️ charge → ${tl}`, tir: `🏹 tir → ${tl}`, depl: `👣 déplacement → ${o.tile}`, marche: `🏃 marche forcée → ${o.tile}`, tirailleur: '🪶 tirailleur' }[o.type] || '?';
-        }
-
-        function chooseTarget(u, type) {
-            const gord = LAND.view.b?.gorders?.[myKey()];
-            const max = type === 'charge' ? (gord === 'charge' ? 7 : 5) : (u.type === 'art' ? 10 : 7);
-            const foes = LAND.units.filter((e) => e.team && e.team !== u.team && e.tile && u.tile)
-                .map((e) => ({ e, d: hexDist(u.tile, e.tile) })).filter((x) => x.d <= max).sort((a, b) => a.d - b.d).slice(0, 14);
-            if (!foes.length) return toast(`Aucune unité adverse à ${max} hexagones ou moins.`, true);
-            landingDialog(`${type === 'charge' ? 'Charge' : 'Tir'} : choisissez la cible`, `<p>${unitLbl(u)} · portée ${max} hexagones${type === 'tir' ? ' (courte 3, longue 7 avec malus)' : ''}.</p>`, [
-                ...foes.map(({ e, d }) => ({ label: `${unitLbl(e)} · ${e.owner} · ${d} hex`, cls: 'btn-dark', fn: () => sendOrder(u, { type, target: e.id }) })),
-                { label: 'Annuler' }
-            ]);
+            return { charge: `⚔️ charge → ${tl}`, tir: `${o.range === 'art' ? '💥 tir d’artillerie' : (o.range === 'court' ? '🏹 tir court' : (o.range === 'long' ? '🏹 tir long' : '🏹 tir'))}${o.target ? ` → ${tl}` : ' (cible choisie au moment du tir)'}`, depl: o.tile ? `👣 déplacement → ${o.tile}` : '👣 déplacement (bouger ou non au moment des déplacements)', marche: o.tile ? `🏃 marche forcée → ${o.tile}` : '🏃 marche forcée (dep × 2, au moment des déplacements)', tirailleur: '🪶 tirailleur' }[o.type] || '?';
         }
 
         function startPick(u, type) {
@@ -4388,15 +4504,19 @@
             const u = LAND.units.find((x) => x.id === unitId);
             if (!u || !ciEq(u.owner, state.username)) return;
             const cur = LAND.view.b?.orders?.[unitId] ?? null;
-            const btns = [
-                { label: '⚔️ Charge (5 hexagones)', cls: 'btn-dark', fn: () => chooseTarget(u, 'charge') },
-                { label: '🏹 Tir (courte 3 · longue 7)', cls: 'btn-dark', fn: () => chooseTarget(u, 'tir') },
-                { label: `👣 Déplacement (dep ${u.dep})`, cls: 'btn-dark', fn: () => startPick(u, 'depl') },
-                { label: '🏃 Marche forcée (dep × 2)', cls: 'btn-dark', fn: () => startPick(u, 'marche') }
-            ];
+            // Ordres selon les capacités de la fiche : charge = attaque de corps à corps ; tir court / long = attaque de tir ; artillerie = un seul ordre de tir.
+            const caps = u.caps || { cc: true, tir: false, art: false };
+            const btns = [];
+            if (caps.cc) btns.push({ label: '⚔️ Charge : touchez ensuite la cible', cls: 'btn-dark', fn: () => startChargePick(u) });
+            if (caps.tir) btns.push({ label: '🏹 Tir court (3 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'court' }) }, { label: '🏹 Tir long (7 hexagones, malus +3)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'long' }) });
+            if (caps.art) btns.push({ label: '💥 Tir d’artillerie (10 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'art' }) });
+            btns.push({ label: `👣 Déplacement (dep ${u.dep}, bouger ou non au moment voulu)`, cls: 'btn-dark', fn: () => sendOrder(u, { type: 'depl' }) },
+                { label: '🏃 Marche forcée (dep × 2, pas d’attaque)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'marche' }) });
+            const cur0 = LAND.view.b?.orders?.[unitId];
+            if (cur0 && (cur0.type === 'depl' || cur0.type === 'marche')) showReach(u, cur0.type); else if (LAND.reach) { LAND.reach = null; requestDraw(); }
             if (/T/.test(u.type || '')) btns.push({ label: '🪶 Tirailleur', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tirailleur' }) });
-            btns.push({ label: 'Aucun ordre', fn: () => sendOrder(u, null) }, { label: 'Annuler' });
-            landingDialog(`Ordre : ${unitLbl(u)}`, `<p>Ordre actuel : ${orderText(cur)}</p><p class="lp-hint">Les ordres restent cachés à l’équipe adverse jusqu’à ce que le MJ les révèle.</p>`, btns);
+            btns.push({ label: 'Effacer l’ordre', fn: () => sendOrder(u, null) }, { label: 'Annuler' });
+            landingDialog(`Ordre : ${unitLbl(u)}`, `<p>Ordre actuel : ${orderText(cur, unitId)}</p><p class="lp-hint">Les ordres restent cachés à l’équipe adverse jusqu’à ce que le MJ les révèle.</p>`, btns);
         }
 
         function movePanelHtml() {
@@ -4542,6 +4662,23 @@
             return h;
         }
 
+        // Liste des unités non déposées, regroupées par joueur.
+        function undepList(und) {
+            const by = new Map();
+            for (const u of und) by.set(u.owner, [...(by.get(u.owner) || []), u.name]);
+            return [...by].map(([o, list]) => `<b>${o}</b> : ${list.join(', ')}`).join('<br>');
+        }
+        // Avertissement affiché une fois, à tous, quand toutes les unités déposées sont placées.
+        function checkUndeposited(v) {
+            const b = v?.b;
+            if (v?.phase !== 'bplace' || !b?.allPlaced || !(b.undeposited || []).length) { LAND.undepShown = false; return; }
+            if (LAND.undepShown) return;
+            LAND.undepShown = true;
+            const und = b.undeposited;
+            const mine = und.filter((u) => ciEq(u.owner, state.username));
+            landingDialog('Placement terminé', `<p>Toutes les unités déposées sont placées.</p><p>⚠️ <b>${und.length}</b> unité${und.length > 1 ? 's n’ont' : ' n’a'} pas été déposée${und.length > 1 ? 's' : ''} au débarquement : ${und.length > 1 ? 'elles ne sont pas placées et ne participent' : 'elle n’est pas placée et ne participe'} pas à la bataille.${mine.length ? ` Dont <b>${mine.length}</b> à vous.` : ''}</p><p class="lp-hint">${undepList(und)}</p>`, [{ label: 'Compris', cls: 'btn-primary' }]);
+        }
+
         function battlePanelHtml() {
             const v = LAND.view;
             const b = v.b;
@@ -4552,8 +4689,10 @@
             if (v.phase === 'move') return movePanelHtml();
             if (v.phase === 'fire') return firePanelHtml();
             if (v.phase === 'bplace') {
-                const cnt = (t) => { const us = LAND.units.filter((u) => u.team === t); return `${us.filter((u) => u.bplaced).length}/${us.length}`; };
+                const cnt = (t) => { const us = LAND.units.filter((u) => u.team === t && u.home); return `${us.filter((u) => u.bplaced).length}/${us.length}`; }; // seules les unités déposées au débarquement
                 if (!(b.clusters || []).some((c) => c.roll)) h += '<p class="lp-hint">🗺️ Secteurs séparés : les deux équipes placent <b>en même temps</b>.</p>';
+                const und = b.undeposited || [];
+                if (und.length && b.allPlaced) h += `<div class="fire-box"><b>⚠️ Placement terminé.</b> ${und.length} unité${und.length > 1 ? 's n’ont' : ' n’a'} pas été déposée${und.length > 1 ? 's' : ''} au débarquement : ${und.length > 1 ? 'elles ne sont pas placées et ne participent' : 'elle n’est pas placée et ne participe'} pas à la bataille.<br><small>${undepList(und)}</small></div>`;
                 h += `<p class="lp-hint">Placées : <b style="color:${col('t1')}">${teamName('t1')}</b> ${cnt('t1')} · <b style="color:${col('t2')}">${teamName('t2')}</b> ${cnt('t2')}.</p>`;
                 const mineNow = (b.actors || []).length;
                 if (v.myTeam) h += `<p class="lp-hint">${mineNow ? `<b>C’est à vous de placer</b> (${mineNow} unité${mineNow > 1 ? 's' : ''} possible${mineNow > 1 ? 's' : ''} maintenant).` : 'Vous attendez : l’autre équipe place dans votre secteur, ou toutes vos unités sont placées.'}</p>`;
@@ -4575,7 +4714,7 @@
                     h += `<button class="btn btn-primary" data-land="batnext">▶ Passer aux ordres${b.allPlaced ? '' : ' (unités restantes)'}</button></div>`;
                 }
             } else {
-                const mine = LAND.units.filter((u) => ciEq(u.owner, state.username));
+                const mine = LAND.units.filter((u) => ciEq(u.owner, state.username) && u.tile); // unités sur le plateau (ni détruites, ni non déposées)
                 const key = myKey();
                 const ready = Object.keys(b.ready || {}).some((k) => ciEq(k, state.username));
                 h += '<p class="lp-hint">📝 Chaque joueur donne un ordre à ses unités pour le prochain tour : charge, tir, déplacement, marche forcée… Les ordres sont visibles de votre équipe, cachés à l’équipe adverse.</p>';
@@ -4586,7 +4725,10 @@
                 }
                 if (mine.length) {
                     h += '<div class="lbl2" style="margin-top:4px"><b>Mes unités</b></div>';
-                    for (const u of mine) h += `<div class="bat-row"><b>${unitLbl(u)}</b><span class="lp-grow">${orderText(b.orders?.[u.id] ?? null)}</span><button class="btn btn-dark" data-land="ord" data-u="${u.id}" ${ready ? 'disabled' : ''}>Ordre</button></div>`;
+                    h += `<p class="lp-hint">${ready ? 'Ordres validés.' : '<b>Appui long sur chacune de vos unités</b>, sur la carte, pour lui donner son ordre.'}</p>`;
+                    for (const u of mine) h += `<div class="bat-row"><b>${unitLbl(u)}</b><span class="lp-grow">${orderText(b.orders?.[u.id] ?? null, u.id)}</span></div>`;
+                    const noOrder = mine.filter((u) => !b.orders?.[u.id]);
+                    if (noOrder.length && !ready) h += `<p class="lp-hint" style="color:#c62828">⚠️ ${noOrder.length} unité${noOrder.length > 1 ? 's' : ''} sans ordre : chaque unité doit avoir un ordre avant de valider (un ordre de déplacement laisse le choix de bouger ou non).</p>`;
                     h += `<div class="lp-actions"><button class="btn ${ready ? 'btn-dark' : 'btn-primary'}" data-land="bready">${ready ? '✏️ Modifier mes ordres' : '✅ Valider mes ordres'}</button></div>`;
                 } else if (admin) {
                     const all = Object.entries(b.orders || {});
@@ -4606,7 +4748,7 @@
             let ban = document.getElementById('batBanner');
             let txt = '';
             let cancel = false;
-            if (LAND.pick) { txt = `👣 Touchez la tuile de destination (${LAND.pick.max} hexagones au plus)`; cancel = true; }
+            if (LAND.pick) { txt = LAND.pick.type === 'charge' ? `⚔️ Touchez l’unité adverse à charger (${LAND.pick.max} hexagones au plus)` : `👣 Touchez la tuile de destination (${LAND.pick.max} hexagones au plus)`; cancel = true; }
             else if (v.phase === 'bplace' && v.b) {
                 if (batTurn()) txt = '🎲 À vous de placer : glissez une de vos unités';
                 else txt = v.myTeam ? 'Placement : vous attendez l’autre équipe dans votre secteur' : 'Placement de bataille en cours';
@@ -4626,7 +4768,7 @@
                 } else txt = f.step === 'flee' ? '🏳️ Jets de fuite' : '✅ Tirs terminés';
             } else if (v.phase === 'orders' && v.b && v.myTeam) {
                 const ready = Object.keys(v.b.ready || {}).some((k) => ciEq(k, state.username));
-                txt = ready ? '✅ Ordres validés' : '📝 Posez vos ordres (panneau ⚔️)';
+                txt = ready ? '✅ Ordres validés' : '📝 Appui long sur chaque unité pour lui donner un ordre';
             }
             if (txt) {
                 if (!ban) { ban = document.createElement('div'); ban.id = 'batBanner'; document.body.appendChild(ban); }
@@ -4838,7 +4980,7 @@
                     '<b>Ensuite les déplacements</b>, à tour de rôle (un nouveau dé désigne à chaque tour l’équipe qui commence) : glissez l’unité vers une tuile en surbrillance (jamais à côté d’un adversaire), choisissez l’orientation, validez. « Reste en place » passe son tour.',
                     'Le MJ peut <b>annuler la dernière action</b> ou terminer l’étape. Les terrains (montagne, eau) bloquent l’arrêt ; la distance est comptée en hexagones à vol d’oiseau.'] },
                 orders: { title: 'Phase 7 · Ordres', items: [
-                    'Chaque joueur donne un ordre à chacune de ses unités (charge, tir, déplacement, marche forcée, tirailleur) et, s’il a un général, l’ordre du général.',
+                    'Chaque joueur donne un ordre à <b>chacune</b> de ses unités par un <b>appui long sur l’unité</b> : charge (unités de corps à corps), tir court ou tir long (unités de tir), tir d’artillerie, déplacement (le joueur choisira de bouger ou non au moment des déplacements), marche forcée, tirailleur. Plus, s’il a un général, l’ordre du général. Impossible de valider tant qu’une unité n’a pas d’ordre.',
                     'Les ordres sont visibles de votre équipe et <b>cachés à l’équipe adverse</b>. Le MJ peut les révéler à tous.',
                     'Ensuite : déplacements, puis tirs avec dés. Le corps à corps se résout encore à la main.'] },
                 fire: { title: 'Phase 9 · Tirs', items: [
@@ -4874,7 +5016,7 @@
                     'Les ordres sont révélés. Les charges se jouent d’abord, de la plus proche à la plus lointaine : quand c’est le tour de votre unité, glissez-la sur une tuile qui touche sa cible.',
                     'Puis les déplacements à tour de rôle : glissez une unité vers une tuile en surbrillance, choisissez l’orientation et validez, ou touchez « Reste en place ».'] },
                 orders: { title: 'Ordres', items: [
-                    'Touchez « Ordre » pour chacune de vos unités dans le panneau ⚔️ : charge, tir, déplacement, marche forcée ou tirailleur ; puis <b>Valider mes ordres</b>.',
+                    '<b>Appui long sur chacune de vos unités</b> pour lui donner son ordre : charge (corps à corps), tir court ou long (unités de tir), tir d’artillerie, déplacement (vous choisirez de bouger ou non au moment des déplacements), marche forcée ou tirailleur. Toutes vos unités doivent avoir un ordre, puis <b>Valider mes ordres</b> (panneau ⚔️).',
                     'Vos coéquipiers voient vos ordres ; l’équipe adverse ne les voit pas avant que le MJ les révèle.'] },
                 fire: { title: 'Tirs', items: [
                     'L’artillerie tire d’abord, puis les autres tirs ; les équipes alternent (un dé désigne qui commence chaque étape).',
@@ -5048,6 +5190,7 @@
             LAND.lastTap = null;
             LAND.pend = null;
             LAND.pick = null;
+            LAND.reach = null;
             LAND.showArea = null;
             LAND.areaSig = '';
             LAND.areaSet = new Set();
@@ -5114,6 +5257,7 @@
             requestDraw();
             if (next && next.phase !== prev && next.phase !== 'off') phaseNotice(false);
             checkDiceAnim(LAND.view);
+            checkUndeposited(LAND.view);
         }
 
         document.addEventListener('click', async (e) => {
@@ -5124,7 +5268,6 @@
             else if (k === 'prev' && state.isAdmin) adminPrev();
             else if (k === 'help') phaseNotice(true);
             else if (k === 'sim') setSim(!LAND.simOn);
-            else if (k === 'ord') openOrderDialog(b.dataset.u);
             else if (k === 'mskip') landEmit('move-skip', { unit: b.dataset.u });
             else if (k === 'mundo' && state.isAdmin) landEmit('move-undo', {});
             else if (k === 'mend' && state.isAdmin) landEmit('move-end', {});
