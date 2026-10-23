@@ -269,6 +269,28 @@
         .bat-log { font-size: .74rem; color: #444; margin-top: 6px; max-height: 90px; overflow: auto; border-top: 1px solid #ddd; padding-top: 4px; }
         .bat-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; font-size: .8rem; }
         .bat-row .lp-grow { flex: 1; min-width: 0; }
+        #diceAnim { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        #diceAnim .da-card { background: #fff; border-radius: 14px; padding: 14px 16px; max-width: 520px; width: 100%; max-height: 86vh; overflow: auto; box-shadow: 0 6px 24px #0008; font: 14px/1.35 system-ui, sans-serif; text-align: center; }
+        #diceAnim h3 { margin: 0 0 10px; font-size: 1rem; }
+        #diceAnim .da-dice { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        #diceAnim .da-die { width: 64px; }
+        #diceAnim .da-face { width: 54px; height: 54px; margin: 0 auto; border: 3px solid #333; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: 800; background: #fafafa; transition: transform .08s; }
+        #diceAnim .da-face.roll { transform: rotate(var(--rot, 0deg)) scale(.92); color: #888; }
+        #diceAnim .da-face.ok { border-color: #2e7d32; background: #e8f5e9; color: #1b5e20; }
+        #diceAnim .da-face.ko { border-color: #999; color: #555; }
+        #diceAnim .da-lbl { font-size: .68rem; color: #555; margin-top: 3px; word-break: break-word; }
+        #diceAnim .da-text { margin-top: 12px; font-weight: 600; min-height: 1.3em; }
+        #diceAnim .da-hint { margin-top: 8px; font-size: .72rem; color: #888; }
+        .fire-box { border: 1px solid #e0c9a8; background: #fff8ef; border-radius: 8px; padding: 6px 8px; margin: 6px 0; font-size: .8rem; }
+        .fire-box h4 { margin: 0 0 4px; font-size: .85rem; }
+        .fire-mod { display: flex; gap: 6px; align-items: center; margin: 2px 0; font-size: .78rem; }
+        .fire-mod input { width: 18px; height: 18px; }
+        .fdice { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+        .fdie { min-width: 38px; border: 2px solid #bbb; border-radius: 7px; padding: 2px 4px; text-align: center; background: #fff; line-height: 1.15; }
+        .fdie b { font-size: 1.05rem; }
+        .fdie small { display: block; color: #666; font-size: .66rem; }
+        .fdie.hit { border-color: #f57c00; }
+        .fdie.wound { border-color: #c62828; background: #ffebee; }
         .local-guide { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: #f4f6fa; font-size: .82rem; line-height: 1.35; text-align: left; }
         .local-guide ol { margin: 6px 0 8px; padding-left: 18px; }
         .local-guide li { margin-bottom: 4px; }
@@ -3073,6 +3095,7 @@
                 const genTile = genId ? placed[genId] ?? null : null;
                 for (let i = 1; i <= l.qty; i++) {
                     const id = `${l.owner}|${l.uid}#${i}`;
+                    if (v.b?.dead?.[id]) continue; // unité détruite : elle quitte le plateau
                     let tile = placed[id] ?? null;
                     const home = tile;
                     const isGen = genId === id;
@@ -3087,8 +3110,8 @@
                     if (v.b?.pos?.[id]) tile = v.b.pos[id];
                     const bpend = Boolean(LAND.pend && LAND.pend.unit === id);
                     if (bpend) tile = LAND.pend.tile;
-                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null,
-                        multi: l.figs / Math.max(1, l.qty) > 1, gen: isGen, near, chev: v.chev?.[l.owner] === id });
+                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null,
+                        multi: l.figs / Math.max(1, l.qty) > 1, gen: isGen, near, chev: v.chev?.[l.owner] === id, alive: v.b?.alive?.[id] ?? null });
                 }
             }
             return out;
@@ -3555,6 +3578,16 @@
                     c.lineTo(b.x - Math.cos(ang + 0.45) * R * 0.5, b.y - Math.sin(ang + 0.45) * R * 0.5);
                     c.closePath(); c.fill();
                 }
+                // Tir en préparation : trait épais du tireur vers sa cible, viseur sur la cible.
+                const fp = LAND.view.phase === 'fire' ? LAND.view.f?.pending : null;
+                if (fp && byId.get(fp.id)?.tile && byId.get(fp.tid)?.tile) {
+                    const a = cen(byId.get(fp.id).tile), t = cen(byId.get(fp.tid).tile);
+                    c.strokeStyle = '#c62828'; c.lineWidth = R * 0.2; c.lineCap = 'round';
+                    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(t.x, t.y); c.stroke();
+                    c.lineWidth = R * 0.12;
+                    c.beginPath(); c.arc(t.x, t.y, R * 0.75, 0, Math.PI * 2); c.stroke();
+                    c.beginPath(); c.moveTo(t.x - R, t.y); c.lineTo(t.x + R, t.y); c.moveTo(t.x, t.y - R); c.lineTo(t.x, t.y + R); c.stroke();
+                }
                 // Destinations possibles pour un déplacement en cours de choix.
                 if (LAND.pick) {
                     const pu = byId.get(LAND.pick.unit);
@@ -3700,7 +3733,7 @@
                         c.fillStyle = '#1b1b1b';
                     }
                     // Le numéro de l'unité reste toujours visible : c'est le nom qui est raccourci si besoin.
-                    const num = ` ${u.idx}`;
+                    const num = ` ${u.idx}${u.alive && u.alive[0] < u.alive[1] ? `·${u.alive[0]}` : ''}`; // ·n = figurines restantes après des pertes
                     let nm = u.type ? u.type : shortName(u.name, 12);
                     while (c.measureText(nm + num).width > textW && nm.length > 3) nm = `${nm.slice(0, -2)}…`;
                     c.fillText(nm + num, ox - w / 2 + leftPad, oy + chipH * 0.03);
@@ -4254,7 +4287,7 @@
             }
         }
 
-        const PHASE_NAME = { zones: '1 · Regroupement des zones', choose: '3 · Choix des zones', place: '4 · Dépôt des unités', locked: '5 · Placements verrouillés', bplace: '6 · Placement de bataille', orders: '7 · Ordres', move: '8 · Déplacements' };
+        const PHASE_NAME = { zones: '1 · Regroupement des zones', choose: '3 · Choix des zones', place: '4 · Dépôt des unités', locked: '5 · Placements verrouillés', bplace: '6 · Placement de bataille', orders: '7 · Ordres', move: '8 · Déplacements', fire: '9 · Tirs' };
 
 
         /* ============================================================ */
@@ -4383,17 +4416,126 @@
                 if (cur && (m.actors || []).includes(cur.id)) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${cur.id}">⏭ Cette unité ne charge pas</button></div><p class="lp-hint">Glissez l’unité vers une tuile en surbrillance (contour vert).</p>`;
             } else if (m.step === 'move') {
                 const cnt = (t) => LAND.units.filter((u) => u.team === t && b.orders?.[u.id] && (b.orders[u.id].type === 'depl' || b.orders[u.id].type === 'marche') && !m.moved?.[u.id]).length;
+                if (m.roll) h += `<p class="lp-hint">🎲 Dé des déplacements : ${teamName('t1')} <b>${m.roll.t1}</b> · ${teamName('t2')} <b>${m.roll.t2}</b></p>`;
                 h += `<p class="lp-hint">👣 <b>Déplacements</b> à tour de rôle. Au tour de <b style="color:${col(m.active)}">${teamName(m.active)}</b>${v.myTeam === m.active ? ' — <b>c’est à vous</b>' : ''}. Restantes : ${teamName('t1')} ${cnt('t1')} · ${teamName('t2')} ${cnt('t2')}.</p>`;
                 h += '<p class="lp-hint">Glissez une unité ayant un ordre de déplacement ou de marche forcée vers une tuile en surbrillance (jamais à côté d’un adversaire), choisissez l’orientation, validez.</p>';
                 const mine = (m.actors || []);
                 for (const id of mine) h += `<div class="bat-row"><b>${lbl(id)}</b><span class="lp-grow"></span><button class="btn btn-dark" data-land="mskip" data-u="${id}">Reste en place</button></div>`;
             } else {
-                h += '<p class="lp-hint">✅ Charges et déplacements terminés. La suite (tirs, corps à corps) arrive ensuite ; en attendant, résolvez à la main.</p>';
+                h += `<p class="lp-hint">✅ Charges et déplacements terminés.${admin ? '' : ' Le MJ lance ensuite les tirs.'}</p>`;
+                if (admin) h += '<div class="lp-actions"><button class="btn btn-primary" data-land="ffire">▶ Passer aux tirs</button></div>';
             }
             if (admin) {
                 h += '<div class="lp-actions">';
                 h += `<button class="btn btn-dark" data-land="mundo" ${m.stackLen ? '' : 'disabled'}>↩️ Annuler la dernière action</button>`;
                 if (m.step !== 'done') h += `<button class="btn btn-dark" data-land="mend">⏭ ${m.step === 'charge' ? 'Terminer les charges' : 'Terminer les déplacements'}</button>`;
+                h += '</div>';
+            }
+            if ((b?.log || []).length) h += `<div class="bat-log">${b.log.slice(-8).reverse().map((x) => `• ${x.text}`).join('<br>')}</div>`;
+            return h;
+        }
+
+        /* ---------- Tirs : artillerie puis autres tirs, à tour de rôle ; le MJ lance les dés ---------- */
+
+        // Étiquette d'une unité, même détruite (elle n'est plus dans LAND.units).
+        function lblAny(id) {
+            const m = /^(.*)\|(.*)#(\d+)$/.exec(String(id || ''));
+            const l = m ? (LAND.view.lines || []).find((x) => x.owner === m[1] && x.uid === m[2]) : null;
+            return l ? `${l.type || shortName(l.name, 12)} ${m[3]} <small>(${l.owner})</small>` : '?';
+        }
+        const figsTxt = (id) => { const a = LAND.view.b?.alive?.[id]; return a ? ` · ${a[0]}/${a[1]} fig.` : ''; };
+        const FIRE_STEP = { art: '💥 Artillerie', tir: '🏹 Tirs', flee: '🏳️ Jets de fuite', done: '✅ Tirs terminés' };
+
+        function aimDialog(id) {
+            const f = LAND.view.f;
+            const list = f?.targets?.[id] || [];
+            if (!list.length) return toast(`Aucune cible à portée (${f?.step === 'art' ? '10' : '7'} hexagones).`, true);
+            landingDialog(`${f.step === 'art' ? 'Artillerie' : 'Tir'} : choisissez la cible`, `<p>${lblAny(id)}${figsTxt(id)} · portée ${f.step === 'art' ? '10 hexagones' : 'courte 3, longue 7'}. 👁 = ligne de vue dégagée, 🚫 = sans voir (+4).</p>`, [
+                ...list.map((t) => ({ label: `${t.los ? '👁' : '🚫'} ${lblAny(t.id).replace(/<[^>]+>/g, '')} · ${t.d} hex`, cls: 'btn-dark', fn: () => landEmit('fire-aim', { unit: id, target: t.id }) })),
+                { label: 'Annuler' }
+            ]);
+        }
+
+        function fixDialog(id) {
+            const a = LAND.view.b?.alive?.[id];
+            const u = LAND.units.find((x) => x.id === id);
+            const total = a ? a[1] : (u ? Math.max(1, Math.round(u.figs / Math.max(1, u.qty))) : 1);
+            const cur = a ? a[0] : total;
+            landingDialog('Corriger les pertes', `<p>${lblAny(id)} : nombre de figurines restantes (0 = unité détruite, ${total} au départ).</p><p><input id="fixN" type="number" min="0" max="${total}" value="${cur}" style="width:90px;font-size:1.1rem;padding:4px"></p>`, [
+                { label: 'Enregistrer', cls: 'btn-primary', fn: () => landEmit('fire-fix', { unit: id, figs: Number($('fixN')?.value) }) },
+                { label: 'Annuler' }
+            ]);
+        }
+
+        function fireResultHtml(x) {
+            if (!x) return '';
+            let h = `<div class="fire-box"><h4>Dernier tir : ${lblAny(x.id)} → ${lblAny(x.tid)} · ${x.d} hex</h4>`;
+            if (x.mode === 'art') {
+                h += '<div class="fdice">' + (x.shots || []).map((s) => `<div class="fdie ${s.hit ? 'wound' : ''}"><b>${s.r1}</b>${s.r2 ? ` → <b>${s.r2}</b>` : ''}<small>${s.hit ? `touché · ${s.done ?? 0} PV` : (s.incident ? 'incident !' : 'raté')}</small></div>`).join('') + '</div>';
+                h += '<p class="lp-hint">Dé de 4 : 1-3 touche (dégâts = att de la machine, sur une figurine, sans armure) ; 4 : relance, 1-3 touche si ligne de vue, 4 = incident de tir.</p>';
+            } else {
+                h += `<p class="lp-hint">${x.points} points d’attaque · touche sur <b>${x.thr}+</b> · armure ${x.arm == null ? 'aucune (tout ce qui touche blesse)' : `<b>${x.arm}</b> (blesse si la relance est inférieure)`}</p>`;
+                h += '<div class="fdice">' + (x.dice || []).map((d) => `<div class="fdie ${d.wound ? 'wound' : (d.hit ? 'hit' : '')}"><b>${d.r}</b>${d.a != null ? ` 🛡${d.a}` : ''}<small>${d.v} pts · ${d.wound ? 'blesse' : (d.hit ? 'arrêté' : 'raté')}</small></div>`).join('') + '</div>';
+            }
+            h += `<p><b>${x.dmg} PV</b> enlevés · ${x.lost} figurine(s) retirée(s) · ${x.destroyed ? '<b>unité détruite</b>' : `reste ${x.left}`}</p>`;
+            if (x.ones) h += `<p class="lp-hint">⚠️ Tir dans une mêlée : ${x.ones} dé(s) à 1 → tir sur une unité alliée au contact (à résoudre par le MJ).</p>`;
+            if (state.isAdmin) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="ffix" data-u="${x.tid}">✏️ Corriger les pertes de la cible</button></div>`;
+            return h + '</div>';
+        }
+
+        function firePanelHtml() {
+            const v = LAND.view, f = v.f, b = v.b;
+            if (!f) return '<p class="lp-hint">Tirs en préparation…</p>';
+            const admin = state.isAdmin;
+            const col = (t) => TEAM_COL[t] || '#555';
+            let h = `<p class="lp-hint"><b>${FIRE_STEP[f.step] || ''}</b>`;
+            for (const k of ['art', 'tir']) if (f.rolls?.[k]) h += ` · dé ${k === 'art' ? 'artillerie' : 'tirs'} : ${teamName('t1')} ${f.rolls[k].t1} / ${teamName('t2')} ${f.rolls[k].t2}`;
+            h += '</p>';
+            if (f.step === 'art' || f.step === 'tir') {
+                h += `<p class="lp-hint">Au tour de <b style="color:${col(f.active)}">${teamName(f.active)}</b>${v.myTeam === f.active ? ' — <b>c’est à vous</b>' : ''}. Tireurs restants : ${teamName('t1')} ${f.left?.t1 ?? 0} · ${teamName('t2')} ${f.left?.t2 ?? 0}.</p>`;
+                const p = f.pending;
+                if (!p) {
+                    for (const id of f.actors || []) h += `<div class="bat-row"><b>${lblAny(id)}</b><span class="lp-grow">${figsTxt(id)}</span><button class="btn btn-primary" data-land="faim" data-u="${id}">🎯 Viser</button><button class="btn btn-dark" data-land="fskip" data-u="${id}">Ne tire pas</button></div>`;
+                    if ((f.actors || []).length) h += '<p class="lp-hint">Choisissez la cible : le MJ vérifie les modificateurs puis lance les dés.</p>';
+                    else if (v.myTeam === f.active) h += '<p class="lp-hint">Un coéquipier choisit son tir.</p>';
+                } else {
+                    const mine = (f.actors || []).includes(p.id);
+                    h += `<div class="fire-box"><h4>🎯 ${lblAny(p.id)} → ${lblAny(p.tid)} · ${p.d} hex${p.mode === 'tir' ? (p.d > 3 ? ' (longue portée)' : ' (courte portée)') : ''}</h4>`;
+                    if (p.mode === 'art') h += `<p class="lp-hint">${p.dice} machine(s) : un dé de 4 chacune. Ligne de vue : ${p.los?.ok ? 'dégagée' : `non (${p.los?.reason || ''})`}.</p>`;
+                    else h += `<p class="lp-hint">${p.points} points → <b>${p.dice} dé(s)</b> · touche sur <b>${p.thr}+</b> · armure cible ${p.arm == null ? 'aucune' : `<b>${p.arm}</b>`}${p.melee ? ' · ⚠️ cible au corps à corps (dés à 1 : tir sur une unité alliée)' : ''}</p>`;
+                    for (const m of p.mods) {
+                        const val = m.arm ? 'A+1' : (m.v > 0 ? `+${m.v}` : `${m.v}`);
+                        if (admin) h += `<label class="fire-mod"><input type="checkbox" data-land="fmod" data-k="${m.k}" ${m.on ? 'checked' : ''}> <span class="lp-grow">${m.label}</span><b>${val}</b></label>`;
+                        else if (m.on) h += `<div class="fire-mod">✔ <span class="lp-grow">${m.label}</span><b>${val}</b></div>`;
+                    }
+                    if (p.mode === 'tir') {
+                        if (admin) h += `<div class="fire-mod"><span class="lp-grow">Ajustement libre du MJ</span><button class="lp-seg" data-land="fadj" data-d="-1">−</button><b>${p.adj > 0 ? '+' : ''}${p.adj || 0}</b><button class="lp-seg" data-land="fadj" data-d="1">+</button></div>`;
+                        else if (p.adj) h += `<div class="fire-mod">✔ <span class="lp-grow">Ajustement du MJ</span><b>${p.adj > 0 ? '+' : ''}${p.adj}</b></div>`;
+                    }
+                    h += '<div class="lp-actions">';
+                    if (admin) h += '<button class="btn btn-primary" data-land="froll">🎲 Lancer les dés</button>';
+                    if (admin || mine) h += '<button class="btn btn-dark" data-land="fcancel">✕ Annuler la visée</button>';
+                    if (admin) h += `<button class="btn btn-dark" data-land="ffix" data-u="${p.tid}">✏️ Pertes de la cible</button>`;
+                    h += '</div>';
+                    if (!admin) h += '<p class="lp-hint">Le MJ vérifie les modificateurs et lance les dés.</p>';
+                    h += '</div>';
+                }
+            } else if (f.step === 'flee') {
+                h += '<p class="lp-hint">Unités passées à la moitié de leurs figurines ou moins : jet d’un d10. Démoralisable : 1 à 7 = détruite ; indémoralisable (inf lourde ou d’élite, cavalerie lourde, monstre) : 1 = détruite ; +1 si le général de l’armée est mort.</p>';
+                for (const [id, res] of Object.entries(f.flee || {})) {
+                    h += `<div class="bat-row"><b>${lblAny(id)}</b><span class="lp-grow">${figsTxt(id)}${res ? (res.skip ? ' · ignoré' : ` · dé <b>${res.r}</b> (≤ ${res.thr} fuit) → ${res.out ? '<b>fuit, détruite</b>' : 'tient'}`) : ''}</span>`;
+                    if (!res && admin) h += `<button class="btn btn-primary" data-land="fflee" data-u="${id}">🎲 Jet</button><button class="btn btn-dark" data-land="fflee" data-u="${id}" data-skip="1">Ignorer</button>`;
+                    h += '</div>';
+                }
+            } else {
+                h += '<p class="lp-hint">Le corps à corps n’est pas encore automatisé : résolvez-le à la main (le MJ peut corriger les pertes), puis le MJ passe au tour suivant.</p>';
+                if (admin) h += '<div class="lp-actions"><button class="btn btn-primary" data-land="fnext">▶ Tour suivant (ordres)</button></div>';
+            }
+            h += fireResultHtml(f.last);
+            if (admin) {
+                h += '<div class="lp-actions">';
+                h += `<button class="btn btn-dark" data-land="fundo" ${f.stackLen ? '' : 'disabled'}>↩️ Annuler la dernière action</button>`;
+                if (f.step !== 'done') h += `<button class="btn btn-dark" data-land="fend">⏭ ${{ art: 'Terminer l’artillerie', tir: 'Terminer les tirs', flee: 'Ignorer les jets restants' }[f.step]}</button>`;
                 h += '</div>';
             }
             if ((b?.log || []).length) h += `<div class="bat-log">${b.log.slice(-8).reverse().map((x) => `• ${x.text}`).join('<br>')}</div>`;
@@ -4408,12 +4550,14 @@
             let h = '';
             const col = (t) => TEAM_COL[t] || '#555';
             if (v.phase === 'move') return movePanelHtml();
+            if (v.phase === 'fire') return firePanelHtml();
             if (v.phase === 'bplace') {
                 const cnt = (t) => { const us = LAND.units.filter((u) => u.team === t); return `${us.filter((u) => u.bplaced).length}/${us.length}`; };
+                if (!(b.clusters || []).some((c) => c.roll)) h += '<p class="lp-hint">🗺️ Secteurs séparés : les deux équipes placent <b>en même temps</b>.</p>';
                 h += `<p class="lp-hint">Placées : <b style="color:${col('t1')}">${teamName('t1')}</b> ${cnt('t1')} · <b style="color:${col('t2')}">${teamName('t2')}</b> ${cnt('t2')}.</p>`;
                 const mineNow = (b.actors || []).length;
                 if (v.myTeam) h += `<p class="lp-hint">${mineNow ? `<b>C’est à vous de placer</b> (${mineNow} unité${mineNow > 1 ? 's' : ''} possible${mineNow > 1 ? 's' : ''} maintenant).` : 'Vous attendez : l’autre équipe place dans votre secteur, ou toutes vos unités sont placées.'}</p>`;
-                h += '<p class="lp-hint">Les sections de débarquement <b>qui se touchent</b> (même entre zones) forment un <b>secteur</b> où les deux équipes placent à tour de rôle (un dé par secteur). Les secteurs séparés placent <b>en même temps</b>.</p>';
+                h += '<p class="lp-hint">Deux sections de débarquement dont les <b>aires</b> (les mêmes que pour le bonus de placement) se touchent ou bordent une <b>même frontière</b> (ligne de disques ou de triangles) forment un <b>secteur</b> : les deux équipes s’y font face et placent à tour de rôle (dé d’initiative). Des secteurs séparés placent <b>en même temps</b>.</p>';
                 const cl = b.clusters || [];
                 if (cl.length) {
                     h += '<div class="bat-log" style="max-height:none">' + cl.map((c, i) => {
@@ -4473,6 +4617,13 @@
                 if (m.step === 'done') txt = '✅ Déplacements terminés';
                 else if (m.step === 'charge') txt = batTurn() ? `⚔️ À vous de charger : glissez ${cu ? unitLbl(cu) : 'votre unité'} contre sa cible` : `⚔️ Charge de ${cu ? `${unitLbl(cu)} (${cu.owner})` : '…'}`;
                 else txt = batTurn() ? '👣 À vous de déplacer : glissez une de vos unités' : `👣 Déplacements : au tour de ${teamName(m.active)}`;
+            } else if (v.phase === 'fire' && v.f) {
+                const f = v.f;
+                if (f.step === 'art' || f.step === 'tir') {
+                    const what = f.step === 'art' ? '💥 Artillerie' : '🏹 Tirs';
+                    if (f.pending) txt = `${what} : ${state.isAdmin ? 'vérifiez les modificateurs puis lancez les dés' : 'le MJ lance les dés'}`;
+                    else txt = (f.actors || []).length && !state.isAdmin ? `${what} : à vous de viser (panneau ⚔️)` : `${what} : au tour de ${teamName(f.active)}`;
+                } else txt = f.step === 'flee' ? '🏳️ Jets de fuite' : '✅ Tirs terminés';
             } else if (v.phase === 'orders' && v.b && v.myTeam) {
                 const ready = Object.keys(v.b.ready || {}).some((k) => ciEq(k, state.username));
                 txt = ready ? '✅ Ordres validés' : '📝 Posez vos ordres (panneau ⚔️)';
@@ -4510,7 +4661,7 @@
             if (!landOn() || !LAND.open) { panel.hidden = true; return; }
             const admin = state.isAdmin;
             let h = `<div class="lp-head"><b>⚔️ Débarquement</b><span class="lp-phase">${PHASE_NAME[v.phase] || ''}</span><button class="lp-x" data-land="help" aria-label="Rappel des actions" title="Rappel des actions">ℹ️</button><button class="lp-x" data-land="close" aria-label="Fermer">✕</button></div>`;
-            if (v.phase === 'bplace' || v.phase === 'orders' || v.phase === 'move') {
+            if (v.phase === 'bplace' || v.phase === 'orders' || v.phase === 'move' || v.phase === 'fire') {
                 h += battlePanelHtml();
                 if (admin) h += '<div class="lp-actions"><button class="btn btn-dark" data-land="back">◀ Étape précédente</button></div>';
             } else if (admin) {
@@ -4684,12 +4835,19 @@
                     'Le MJ peut <b>annuler le dernier placement</b> ou relancer le dé tant que rien n’est placé. Quand tout est placé, <b>▶ Passer aux ordres</b>.'] },
                 move: { title: 'Phase 8 · Déplacements', items: [
                     'Les ordres sont révélés à tous. <b>Charges d’abord</b>, de la cible la plus proche à la plus lointaine (un dé départage les égalités) : le joueur concerné glisse son unité sur une tuile qui touche sa cible, à portée. La cible se tourne vers l’attaquant (sauf si elle est déjà au contact d’un autre).',
-                    '<b>Ensuite les déplacements</b>, à tour de rôle (l’équipe qui a placé en premier commence) : glissez l’unité vers une tuile en surbrillance (jamais à côté d’un adversaire), choisissez l’orientation, validez. « Reste en place » passe son tour.',
+                    '<b>Ensuite les déplacements</b>, à tour de rôle (un nouveau dé désigne à chaque tour l’équipe qui commence) : glissez l’unité vers une tuile en surbrillance (jamais à côté d’un adversaire), choisissez l’orientation, validez. « Reste en place » passe son tour.',
                     'Le MJ peut <b>annuler la dernière action</b> ou terminer l’étape. Les terrains (montagne, eau) bloquent l’arrêt ; la distance est comptée en hexagones à vol d’oiseau.'] },
                 orders: { title: 'Phase 7 · Ordres', items: [
                     'Chaque joueur donne un ordre à chacune de ses unités (charge, tir, déplacement, marche forcée, tirailleur) et, s’il a un général, l’ordre du général.',
                     'Les ordres sont visibles de votre équipe et <b>cachés à l’équipe adverse</b>. Le MJ peut les révéler à tous.',
-                    'La résolution (charges, déplacements, tirs avec dés, corps à corps) se fait pour l’instant à la main.'] }
+                    'Ensuite : déplacements, puis tirs avec dés. Le corps à corps se résout encore à la main.'] },
+                fire: { title: 'Phase 9 · Tirs', items: [
+                    'Un dé désigne l’équipe qui ouvre l’<b>artillerie</b> ; les équipes tirent ensuite à tour de rôle, une unité à la fois. Un second dé désigne celle qui ouvre les <b>autres tirs</b>.',
+                    'Peuvent tirer : les unités avec un ordre de tir, de déplacement (malus +3 après déplacement, sauf dep+t) ou de tirailleur. L’artillerie et les armes lourdes ne tirent pas après un déplacement ni au corps à corps.',
+                    'Le joueur choisit sa cible (👁 ligne de vue dégagée, 🚫 sans voir). Vous voyez les <b>modificateurs proposés d’après la carte</b> (portée, ligne de vue, étendard, colline, forêt, construction, général, magie…) : cochez ou décochez, ajustez si besoin, puis <b>🎲 Lancer les dés</b>.',
+                    'Calcul : att × figurines = points ; un d10 par dizaine (10 PV) et un dé pour le reste ; touche si le dé ≥ seuil (4 + modificateurs) ; l’armure relance, blesse si inférieur à A. Les figurines à 0 PV sont retirées, une unité vide quitte le plateau.',
+                    'Artillerie : un dé de 4 par machine ; 1-3 enlève l’att de la machine à une figurine, sans armure ; 4 = relance (1-3 touche si ligne de vue, 4 = incident). L’unité du général ignore l’artillerie.',
+                    '<b>✏️ Corriger les pertes</b>, <b>↩️ Annuler la dernière action</b>, <b>⏭ Terminer l’étape</b>. À la fin : jets de fuite des unités passées à la moitié de leurs figurines, puis <b>▶ Tour suivant</b> (le corps à corps reste à la main).'] }
             },
             joueur: {
                 zones: { title: 'Le MJ prépare le débarquement', items: [
@@ -4717,7 +4875,11 @@
                     'Puis les déplacements à tour de rôle : glissez une unité vers une tuile en surbrillance, choisissez l’orientation et validez, ou touchez « Reste en place ».'] },
                 orders: { title: 'Ordres', items: [
                     'Touchez « Ordre » pour chacune de vos unités dans le panneau ⚔️ : charge, tir, déplacement, marche forcée ou tirailleur ; puis <b>Valider mes ordres</b>.',
-                    'Vos coéquipiers voient vos ordres ; l’équipe adverse ne les voit pas avant que le MJ les révèle.'] }
+                    'Vos coéquipiers voient vos ordres ; l’équipe adverse ne les voit pas avant que le MJ les révèle.'] },
+                fire: { title: 'Tirs', items: [
+                    'L’artillerie tire d’abord, puis les autres tirs ; les équipes alternent (un dé désigne qui commence chaque étape).',
+                    'À votre tour, dans le panneau ⚔️ : <b>🎯 Viser</b> une de vos unités puis choisissez la cible (👁 vue dégagée, 🚫 sans voir), ou « Ne tire pas ».',
+                    'Le MJ vérifie les modificateurs et lance les dés : tout le monde voit les dés et les pertes.'] }
             }
         };
 
@@ -4761,7 +4923,19 @@
                         { label: 'Attendre' }, { label: 'Lancer quand même', cls: 'btn-danger', fn: () => landEmit('landing-move', { force: true }) }]);
                 });
             }
-            return toast('Les tirs et le corps à corps seront ajoutés ensuite : résolvez à la main.');
+            if (v.phase === 'move') {
+                return landingDialog('Passer aux tirs ?', '<p>Un dé désigne l’équipe qui ouvre l’<b>artillerie</b>, un second dé celle qui ouvre les <b>autres tirs</b> ; les équipes tirent ensuite à tour de rôle.</p>', [
+                    { label: 'Annuler' },
+                    { label: 'Lancer les tirs', cls: 'btn-primary', fn: () => adminStep('landing-fire', {}, 'Passer aux tirs quand même') }
+                ]);
+            }
+            if (v.phase === 'fire') {
+                return landingDialog('Tour suivant ?', '<p>Le corps à corps n’est pas encore automatisé : résolvez-le d’abord à la main (vous pouvez corriger les pertes).</p><p>Passer ensuite à la <b>pose des ordres</b> du tour suivant ? Positions, orientations et pertes sont conservées ; les ordres sont effacés.</p>', [
+                    { label: 'Annuler' },
+                    { label: 'Tour suivant', cls: 'btn-primary', fn: () => adminStep('battle-next-turn', {}, 'Passer au tour suivant quand même') }
+                ]);
+            }
+            return toast('Étape inconnue.');
         }
 
         // Retour à l'étape précédente : si des choix ou des débarquements (les siens comme ceux des autres joueurs) doivent être effacés,
@@ -4770,13 +4944,16 @@
             const v = LAND.view;
             if (v.phase === 'off') return toast('Le débarquement n’est pas lancé.');
             if (v.phase === 'zones') return toast('C’est la première étape : il n’y a pas d’étape précédente.');
-            const prev = { choose: 'zones', place: 'choose', locked: 'place', bplace: 'locked', orders: 'bplace', move: 'orders' }[v.phase];
+            const prev = { choose: 'zones', place: 'choose', locked: 'place', bplace: 'locked', orders: 'bplace', move: 'orders', fire: 'move' }[v.phase];
             const go = () => landEmit('landing-goto', { phase: prev });
             if (v.phase === 'place') {
                 return landingDialog('Revenir au choix des zones ?', '<p>Les joueurs déjà figés <b>gardent leur zone et leurs unités posées</b>. Vous pourrez libérer un joueur à part si besoin, puis figer de nouveau pour donner leurs unités aux joueurs qui n’avaient pas de zone.</p>', [{ label: 'Revenir', cls: 'btn-danger', fn: go }, { label: 'Annuler' }]);
             }
             if (v.phase === 'bplace') {
                 return landingDialog('Revenir aux placements verrouillés ?', '<p>Les positions de bataille et l’orientation des unités seront <b>effacées</b> : chaque unité retrouve sa tuile de débarquement. Le dé sera relancé au prochain passage.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
+            }
+            if (v.phase === 'fire') {
+                return landingDialog('Revenir aux déplacements ?', '<p>Les tirs de ce tour sont <b>annulés</b> : les unités retrouvent les pertes qu’elles avaient avant la phase de tir. Les positions sont conservées.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
             }
             if (v.phase === 'move') {
                 return landingDialog('Revenir aux ordres ?', '<p>Les charges et déplacements joués sont <b>annulés</b> : les unités retrouvent leur position et leur orientation d’avant les charges. Les ordres redeviennent cachés.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
@@ -4812,9 +4989,9 @@
         function updateDock() {
             document.querySelectorAll('#stackBr .phase-btn').forEach((b) => { b.hidden = !state.isAdmin; });
             if (!state.isAdmin) return;
-            const names = { off: 'Débarquement arrêté', zones: '1 · Zones', choose: '2 · Choix', place: '3 · Dépôt', locked: '4 · Verrouillé', bplace: '6 · Placement bataille', orders: '7 · Ordres', move: '8 · Déplacements' };
-            const nextT = { off: 'Lancer le débarquement', zones: 'Affecter les équipes', choose: 'Figer les affectations', place: 'Verrouiller les placements', locked: 'Lancer le placement de bataille', bplace: 'Passer aux ordres', orders: 'Lancer les déplacements', move: 'Tirs (à venir)' }[LAND.view.phase];
-            const prevT = { off: '—', zones: 'Aucune étape précédente', choose: 'Retour au regroupement', place: 'Retour aux choix (rien n’est effacé)', locked: 'Retour au dépôt', bplace: 'Retour aux placements verrouillés', orders: 'Retour au placement', move: 'Retour aux ordres (positions d’avant les charges)' }[LAND.view.phase];
+            const names = { off: 'Débarquement arrêté', zones: '1 · Zones', choose: '2 · Choix', place: '3 · Dépôt', locked: '4 · Verrouillé', bplace: '6 · Placement bataille', orders: '7 · Ordres', move: '8 · Déplacements', fire: '9 · Tirs' };
+            const nextT = { off: 'Lancer le débarquement', zones: 'Affecter les équipes', choose: 'Figer les affectations', place: 'Verrouiller les placements', locked: 'Lancer le placement de bataille', bplace: 'Passer aux ordres', orders: 'Lancer les déplacements', move: 'Passer aux tirs', fire: 'Tour suivant (ordres)' }[LAND.view.phase];
+            const prevT = { off: '—', zones: 'Aucune étape précédente', choose: 'Retour au regroupement', place: 'Retour aux choix (rien n’est effacé)', locked: 'Retour au dépôt', bplace: 'Retour aux placements verrouillés', orders: 'Retour au placement', move: 'Retour aux ordres (positions d’avant les charges)', fire: 'Retour aux déplacements (pertes du tour annulées)' }[LAND.view.phase];
             document.querySelector('#stackBr [data-land="next"]').title = `Étape actuelle : ${names[LAND.view.phase]} · Suivant : ${nextT}`;
             document.querySelector('#stackBr [data-land="prev"]').title = `Précédent : ${prevT}`;
             document.querySelector('#stackBr [data-land="prev"]').disabled = LAND.view.phase === 'zones' || LAND.view.phase === 'off';
@@ -4879,6 +5056,45 @@
             document.querySelectorAll('.land-ghost').forEach((g) => g.remove());
         }
 
+        /* ---------- Dés animés : le jet tourne 2 secondes chez tout le monde, puis le résultat s'affiche ---------- */
+        let diceTimer = null;
+        function showDiceAnim(a) {
+            let ov = document.getElementById('diceAnim');
+            if (!ov) {
+                ov = document.createElement('div'); ov.id = 'diceAnim';
+                ov.addEventListener('click', () => { if (ov.dataset.done === '1') ov.hidden = true; });
+                document.body.appendChild(ov);
+            }
+            clearInterval(diceTimer);
+            ov.dataset.done = '0';
+            ov.innerHTML = `<div class="da-card"><h3></h3><div class="da-dice">${a.dice.map((d, i) => `<div class="da-die"><div class="da-face roll" data-i="${i}">?</div><div class="da-lbl"></div></div>`).join('')}</div><div class="da-text"></div><div class="da-hint">Les dés roulent…</div></div>`;
+            ov.querySelector('h3').textContent = a.title;
+            ov.querySelectorAll('.da-lbl').forEach((el, i) => { el.textContent = `${a.dice[i].label} · d${a.dice[i].sides}`; });
+            ov.hidden = false;
+            const faces = [...ov.querySelectorAll('.da-face')];
+            const start = Date.now();
+            diceTimer = setInterval(() => {
+                if (Date.now() - start < 2000) {
+                    faces.forEach((f, i) => { f.textContent = 1 + Math.floor(Math.random() * a.dice[i].sides); f.style.setProperty('--rot', `${Math.floor(Math.random() * 40) - 20}deg`); });
+                    return;
+                }
+                clearInterval(diceTimer);
+                faces.forEach((f, i) => { const d = a.dice[i]; f.textContent = d.v; f.classList.remove('roll'); if (d.ok === true) f.classList.add('ok'); else if (d.ok === false) f.classList.add('ko'); });
+                ov.querySelector('.da-text').textContent = a.text || '';
+                ov.querySelector('.da-hint').textContent = 'Toucher pour fermer';
+                ov.dataset.done = '1';
+            }, 80);
+        }
+        // Nouveau jet dans la vue : on l'anime. Le premier jet reçu après la connexion n'est pas rejoué.
+        function checkDiceAnim(v) {
+            const a = v?.b?.anim;
+            if (!a) return;
+            if (LAND.animSeen === undefined) { LAND.animSeen = a.id; return; }
+            if (a.id === LAND.animSeen) return;
+            LAND.animSeen = a.id;
+            showDiceAnim(a);
+        }
+
         function onLandingView(next) {
             const prev = LAND.view.phase;
             if ((next?.phase || 'off') !== prev) resetLandTransient();
@@ -4897,6 +5113,7 @@
             updateBatUI();
             requestDraw();
             if (next && next.phase !== prev && next.phase !== 'off') phaseNotice(false);
+            checkDiceAnim(LAND.view);
         }
 
         document.addEventListener('click', async (e) => {
@@ -4911,6 +5128,18 @@
             else if (k === 'mskip') landEmit('move-skip', { unit: b.dataset.u });
             else if (k === 'mundo' && state.isAdmin) landEmit('move-undo', {});
             else if (k === 'mend' && state.isAdmin) landEmit('move-end', {});
+            else if (k === 'ffire' && state.isAdmin) adminNext();
+            else if (k === 'faim') aimDialog(b.dataset.u);
+            else if (k === 'fskip') landEmit('fire-skip', { unit: b.dataset.u });
+            else if (k === 'fcancel') landEmit('fire-cancel', {});
+            else if (k === 'fmod' && state.isAdmin) landEmit('fire-mod', { k: b.dataset.k, on: b.checked });
+            else if (k === 'fadj' && state.isAdmin) landEmit('fire-mod', { adj: (LAND.view.f?.pending?.adj || 0) + Number(b.dataset.d) });
+            else if (k === 'froll' && state.isAdmin) landEmit('fire-roll', {});
+            else if (k === 'fundo' && state.isAdmin) landEmit('fire-undo', {});
+            else if (k === 'fend' && state.isAdmin) landEmit('fire-end', {});
+            else if (k === 'ffix' && state.isAdmin) fixDialog(b.dataset.u);
+            else if (k === 'fflee' && state.isAdmin) landEmit('fire-flee', { unit: b.dataset.u, skip: b.dataset.skip === '1' });
+            else if (k === 'fnext' && state.isAdmin) adminNext();
             else if (k === 'gord') landEmit('battle-gorder', { order: b.dataset.o || null });
             else if (k === 'bready') { const rd = Object.keys(LAND.view.b?.ready || {}).some((x) => ciEq(x, state.username)); landEmit('battle-ready', { on: !rd }); }
             else if (k === 'breveal' && state.isAdmin) landEmit('battle-reveal', { on: !LAND.view.b?.revealed });
