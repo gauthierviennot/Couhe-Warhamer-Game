@@ -3799,6 +3799,15 @@
                         c.lineWidth = R * 0.04; c.strokeStyle = TEAM_COL[u.team] || '#555'; c.stroke();
                         c.font = `${br * 1.25}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#fff';
                         c.fillText(o && o.type === 'tir' && o.range !== 'art' ? (o.range === 'court' ? '🏹' : '🎯') : ico, bx, by + br * 0.05);
+                        if (o?.type === 'charge') {
+                            // à côté du symbole de charge : 🔙 prise à revers, 👁 / 🚫 cible visible ou non
+                            const extra = [o.rear ? '🔙' : null, o.seen === false ? '🚫' : (o.seen ? '👁' : null)].filter(Boolean);
+                            extra.forEach((e2, i) => {
+                                const ex = bx + br * 1.75 * (i + 1), er = br * 0.8;
+                                c.beginPath(); c.arc(ex, by, er, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); c.lineWidth = R * 0.03; c.strokeStyle = '#555'; c.stroke();
+                                c.font = `${er * 1.2}px system-ui, sans-serif`; c.fillText(e2, ex, by + er * 0.05);
+                            });
+                        }
                         c.restore();
                     }
                     const rEdge = ox + w / 2;
@@ -4084,7 +4093,7 @@
             if (movMode()) {
                 const al = LAND.view.m?.allow?.[unit.id];
                 if (!al) { LAND.preview = null; hideRangeInfo(); requestDraw(); return; }
-                LAND.preview = { start: unit.tile, pass: [], end: al.filter((k) => k !== unit.tile), bonusEnd: [], genEnd: [], total: al.length, dep: 0, unit };
+                LAND.preview = { start: unit.tile, pass: [], end: al.filter((k) => k !== unit.tile || (LAND.view.m?.step === 'charge' && LAND.view.m.queue?.[LAND.view.m.qi]?.mutual)), bonusEnd: [], genEnd: [], total: al.length, dep: 0, unit };
                 const info = $('rangeInfo');
                 info.innerHTML = `<b>${shortName(unit.name, 22)}</b> ${unit.idx} · ${LAND.view.m.step === 'charge' ? 'tuiles de charge (contact avec la cible)' : 'tuiles où s’arrêter'} : ${al.length}`;
                 info.hidden = false;
@@ -4123,7 +4132,8 @@
             if (movMode() && LAND.preview && !LAND.pend && (LAND.view.m?.actors || []).includes(LAND.preview.unit.id)) {
                 const tk = tileKeyAt(e.clientX, e.clientY);
                 const pu = LAND.preview.unit;
-                if (tk && tk !== pu.tile && (LAND.view.m?.allow?.[pu.id] || []).includes(tk)) {
+                const mutualNow = LAND.view.m?.step === 'charge' && LAND.view.m.queue?.[LAND.view.m.qi]?.mutual; // charge mutuelle : on peut rester sur sa tuile
+                if (tk && (tk !== pu.tile || mutualNow) && (LAND.view.m?.allow?.[pu.id] || []).includes(tk)) {
                     e.stopImmediatePropagation(); e.preventDefault();
                     const live = LAND.units.find((x) => x.id === pu.id) || pu;
                     LAND.preview = null; hideRangeInfo();
@@ -4536,6 +4546,8 @@
             updateBatUI();
             requestDraw();
         }
+        // Pictogrammes d'une charge : 🔙 cible prise à revers ; 👁 cible visible, 🚫 cible non visible (avec l'obstacle).
+        const chargePicto = (o) => `${o.rear ? ' · 🔙 revers' : ''}${o.seen === false ? ` · 🚫 non visible${o.why ? ` (${o.why})` : ''}` : (o.seen ? ' · 👁 visible' : '')}`;
         function handleChargePick(hitUnit, key) {
             const pk = LAND.pick;
             const u = LAND.units.find((x) => x.id === pk?.unit);
@@ -4548,6 +4560,12 @@
             // Cible retenue (l'étiquette touchée, sinon la première unité adverse de la tuile) : bouton « Charger » juste à côté d'elle.
             const t = inRange[0];
             pk.target = t.id;
+            pk.check = null;
+            request('battle-charge-check', { unit: u.id, target: t.id }).then((r) => {
+                if (!r.success || LAND.pick !== pk || pk.target !== t.id) return;
+                pk.check = r;
+                if (LAND.confirm?.unit === t.id) { LAND.confirm.buttons[0].label = `⚔️ Charger (${hexDist(u.tile, t.tile)} hex)${chargePicto(r)}`; placeMapConfirm(); }
+            });
             showMapConfirm({ unit: t.id, buttons: [
                 { label: `⚔️ Charger (${hexDist(u.tile, t.tile)} hex)`, cls: 'ok', fn: () => { LAND.pick = null; hideMapConfirm(); updateBatUI(); requestDraw(); sendOrder(u, { type: 'charge', target: t.id }); } },
                 { label: '✕', cls: 'x', fn: () => { pk.target = null; hideMapConfirm(); } }
@@ -4576,7 +4594,7 @@
             if (!o) return '<b style="color:#c62828">⚠️ aucun ordre (obligatoire)</b>';
             const tgt = o.target ? LAND.units.find((x) => x.id === o.target) : null;
             const tl = tgt ? `${unitLbl(tgt)} (${tgt.owner})` : '?';
-            return { charge: `⚔️ charge → ${tl}`, tir: `${o.range === 'art' ? '💥 tir d’artillerie' : (o.range === 'court' ? '🏹 tir court' : (o.range === 'long' ? '🏹 tir long' : '🏹 tir'))}${o.target ? ` → ${tl}` : ' (cible choisie au moment du tir)'}`, depl: o.tile ? `👣 déplacement → ${o.tile}` : '👣 déplacement (bouger ou non au moment des déplacements)', marche: o.tile ? `🏃 marche forcée → ${o.tile}` : '🏃 marche forcée (dep × 2, au moment des déplacements)', tirailleur: '🪶 tirailleur' }[o.type] || '?';
+            return { charge: `⚔️ charge → ${tl}${chargePicto(o)}`, tir: `${o.range === 'art' ? '💥 tir d’artillerie' : (o.range === 'court' ? '🏹 tir court' : (o.range === 'long' ? '🏹 tir long' : '🏹 tir'))}${o.target ? ` → ${tl}` : ' (cible choisie au moment du tir)'}`, depl: o.tile ? `👣 déplacement → ${o.tile}` : '👣 déplacement (bouger ou non au moment des déplacements)', marche: o.tile ? `🏃 marche forcée → ${o.tile}` : '🏃 marche forcée (dep × 2, au moment des déplacements)', tirailleur: '🪶 tirailleur' }[o.type] || '?';
         }
 
         function startPick(u, type) {
@@ -4617,10 +4635,16 @@
                 h += '<p class="lp-hint">⚔️ <b>Charges</b> — de la plus proche à la plus lointaine (dé en cas d’égalité). L’unité doit finir contre sa cible ; la cible se tourne vers elle.</p>';
                 h += '<div class="bat-log" style="max-height:none">' + m.queue.map((x, i) => {
                     const st = i < m.qi ? '✔' : (i === m.qi ? '▶' : '•');
-                    return `<div class="bat-row" style="${i === m.qi ? 'font-weight:700' : (i < m.qi ? 'opacity:.55' : '')}">${st} ${lbl(x.id)} → ${lbl(x.target)} · ${x.dist} hex${x.tie ? ` · dé ${x.tie}` : ''}</div>`;
+                    const mut = x.mutual ? ` · <b>charge mutuelle</b>${x.plan ? (x.plan.none ? ' (aucun trajet)' : ` · ${x.plan.n} tuile(s) entre elles${x.plan.roll ? ` · dé ${x.plan.roll.a}/${x.plan.roll.b}` : ''}${x.plan.contact ? '' : ' · portées insuffisantes'}`) : ''}` : '';
+                    return `<div class="bat-row" style="${i === m.qi ? 'font-weight:700' : (i < m.qi ? 'opacity:.55' : '')}">${st} ${lbl(x.id)} ${x.mutual ? '⇄' : '→'} ${lbl(x.target)} · ${x.dist} hex${x.tie ? ` · dé ${x.tie}` : ''}${mut}</div>`;
                 }).join('') + '</div>';
                 const cur = m.queue[m.qi];
-                if (cur && (m.actors || []).includes(cur.id)) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${cur.id}">⏭ Cette unité ne charge pas</button></div><p class="lp-hint">Appui long sur l’unité : les tuiles possibles s’entourent de vert. Puis <b>touchez une tuile verte</b> (ou glissez l’unité dessus).</p>`;
+                if (cur?.mutual) {
+                    const chooser = cur.plan?.choice?.unit;
+                    h += `<p class="lp-hint">⇄ <b>Charge mutuelle</b> : les deux unités avancent l’une vers l’autre sur le trajet réel et se rencontrent à mi-chemin (un dé d10 donne une tuile de plus au meilleur score si le nombre de tuiles est impair).${chooser ? ` ${lbl(chooser)} est mieux placée (terrain) : elle choisit où s’arrêter sans perdre son avantage, l’autre fait le reste du chemin.` : ''}</p>`;
+                    const act = (m.actors || [])[0];
+                    if (act) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${act}">⏭ Pas de charge</button></div><p class="lp-hint">Appui long sur ${lbl(act)} : ${chooser ? 'les tuiles possibles' : 'la tuile de rencontre'} s’entoure${chooser ? 'nt' : ''} de vert. Touchez-la : les deux unités se placent face à face.</p>`;
+                } else if (cur && (m.actors || []).includes(cur.id)) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${cur.id}">⏭ Cette unité ne charge pas</button></div><p class="lp-hint">Appui long sur l’unité : les tuiles possibles s’entourent de vert. Puis <b>touchez une tuile verte</b> (ou glissez l’unité dessus).</p>`;
             } else if (m.step === 'move') {
                 const cnt = (t) => LAND.units.filter((u) => u.team === t && b.orders?.[u.id] && (b.orders[u.id].type === 'depl' || b.orders[u.id].type === 'marche') && !m.moved?.[u.id]).length;
                 if (m.roll) h += `<p class="lp-hint">🎲 Dé des déplacements : ${teamName('t1')} <b>${m.roll.t1}</b> · ${teamName('t2')} <b>${m.roll.t2}</b></p>`;
@@ -4866,7 +4890,7 @@
                 const cur = m.step === 'charge' ? m.queue[m.qi] : null;
                 const cu = cur ? LAND.units.find((x) => x.id === cur.id) : null;
                 if (m.step === 'done') txt = '✅ Déplacements terminés';
-                else if (m.step === 'charge') txt = batTurn() ? `⚔️ À vous de charger : glissez ${cu ? unitLbl(cu) : 'votre unité'} contre sa cible` : `⚔️ Charge de ${cu ? `${unitLbl(cu)} (${cu.owner})` : '…'}`;
+                else if (m.step === 'charge') txt = cur?.mutual ? (batTurn() ? '⇄ Charge mutuelle : appui long sur votre unité puis touchez la tuile verte' : '⇄ Charge mutuelle en cours') : (batTurn() ? `⚔️ À vous de charger : appui long sur ${cu ? unitLbl(cu) : 'votre unité'} puis touchez une tuile verte` : `⚔️ Charge de ${cu ? `${unitLbl(cu)} (${cu.owner})` : '…'}`);
                 else txt = batTurn() ? '👣 À vous de déplacer : glissez une de vos unités' : `👣 Déplacements : au tour de ${teamName(m.active)}`;
             } else if (v.phase === 'fire' && v.f) {
                 const f = v.f;
