@@ -380,7 +380,7 @@ function normalizeLanding(raw) {
         for (const [id, v] of Object.entries(rb.done || {}).slice(0, 12000)) if (id in out.placed && v === true) b.done[id] = true;
         for (const [id, o] of Object.entries(rb.orders || {}).slice(0, 12000)) {
             if (!(id in out.placed) || !o || !ORDER_TYPES.includes(o.type)) continue;
-            b.orders[id] = { type: o.type, ...(typeof o.target === 'string' && o.target.length <= 140 ? { target: o.target } : {}), ...(tileOk(o.tile) ? { tile: o.tile } : {}), ...(['court', 'long', 'art'].includes(o.range) ? { range: o.range } : {}) };
+            b.orders[id] = { type: o.type, ...(typeof o.target === 'string' && o.target.length <= 140 ? { target: o.target } : {}), ...(tileOk(o.tile) ? { tile: o.tile } : {}), ...(['court', 'long', 'art'].includes(o.range) ? { range: o.range } : {}), ...(o.rear === true ? { rear: true } : {}), ...(o.seen === false ? { seen: false, why: String(o.why || '').slice(0, 20) } : (o.seen === true ? { seen: true } : {})) };
         }
         for (const [n, g] of Object.entries(rb.gorders || {}).slice(0, 200)) if (n.length <= LIMITS.maxName && GEN_ORDERS.includes(g)) b.gorders[n] = g;
         for (const [n, v] of Object.entries(rb.ready || {}).slice(0, 200)) if (n.length <= LIMITS.maxName && v === true) b.ready[n] = true;
@@ -403,13 +403,14 @@ function normalizeLanding(raw) {
             const rm = raw.m;
             const okId = (x) => typeof x === 'string' && x in out.placed;
             const mm = { step: ['charge', 'move', 'done'].includes(rm.step) ? rm.step : 'move', qi: Math.max(0, Math.min(5000, Math.floor(Number(rm.qi) || 0))), active: TEAM_IDS.includes(rm.active) ? rm.active : null,
-                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)) })),
+                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)),
+                    ...(x.mutual === true ? { mutual: true, ...(x.plan && typeof x.plan === 'object' && JSON.stringify(x.plan).length < 20000 && (x.plan.none || Array.isArray(x.plan.path)) ? { plan: JSON.parse(JSON.stringify(x.plan)) } : {}) } : {}) })),
                 moved: {}, stack: [], snap: { pos: {}, orient: {} },
                 ...(rm.roll && Number.isInteger(rm.roll.t1) && Number.isInteger(rm.roll.t2) && TEAM_IDS.includes(rm.first) ? { roll: { t1: rm.roll.t1, t2: rm.roll.t2 }, first: rm.first } : {}) };
             for (const [id, v] of Object.entries(rm.moved || {}).slice(0, 12000)) if (okId(id) && v === true) mm.moved[id] = true;
             for (const [id, t] of Object.entries(rm.snap?.pos || {}).slice(0, 12000)) if (okId(id) && /^\d{1,3},\d{1,3}$/.test(String(t))) mm.snap.pos[id] = t;
             for (const [id, o] of Object.entries(rm.snap?.orient || {}).slice(0, 12000)) if (okId(id) && Number.isInteger(o) && o >= 0 && o <= 5) mm.snap.orient[id] = o;
-            mm.stack = (Array.isArray(rm.stack) ? rm.stack : []).slice(-300).filter((x) => x && okId(x.id)).map((x) => ({ id: x.id, pos: x.pos ?? null, orient: Number.isInteger(x.orient) ? x.orient : null, tid: typeof x.tid === 'string' ? x.tid : null, torient: Number.isInteger(x.torient) ? x.torient : null, step: x.step, qi: Math.floor(Number(x.qi) || 0), active: x.active ?? null, moved: x.moved === true }));
+            mm.stack = (Array.isArray(rm.stack) ? rm.stack : []).slice(-300).filter((x) => x && okId(x.id)).map((x) => ({ id: x.id, pos: x.pos ?? null, orient: Number.isInteger(x.orient) ? x.orient : null, tid: typeof x.tid === 'string' ? x.tid : null, torient: Number.isInteger(x.torient) ? x.torient : null, step: x.step, qi: Math.floor(Number(x.qi) || 0), active: x.active ?? null, moved: x.moved === true, ...(typeof x.tpos === 'string' ? { tpos: x.tpos } : {}), ...(x.mutual === true ? { mutual: true } : {}) }));
             out.m = mm;
         }
         // Tirs : étape, équipe active, dés, tir en préparation, dernier résultat, jets de fuite, pile d'annulation.
@@ -1465,6 +1466,7 @@ function landingViewFor(socket) {
                 // Unités jamais déposées au débarquement : elles ne sont pas sur le plateau et ne participent pas à la bataille.
                 undeposited: allBattleUnits().filter((u) => !L.placed[u.id]).map((u) => ({ id: u.id, owner: u.owner, team: u.team, name: `${u.line.name} ${u.idx}` })) };
             for (const [id, o] of Object.entries(b.orders)) if (mineOrAdmin(id.slice(0, id.indexOf('|')))) view.b.orders[id] = o;
+            view.b.given = Object.keys(b.orders); // tout le monde voit qu'une unité a reçu un ordre, sans savoir lequel
             for (const [n, g] of Object.entries(b.gorders)) if (mineOrAdmin(n)) view.b.gorders[n] = g;
             for (const [n, v] of Object.entries(b.ready)) if ((admin && !myTeam) || (myTeam && teamOf(n) === myTeam) || admin) view.b.ready[n] = v;
             // Pertes : figurines restantes / total pour les unités touchées, unités détruites.
@@ -1494,9 +1496,9 @@ function landingViewFor(socket) {
             if (L.phase === 'move' && L.m) {
                 const m = L.m;
                 view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length,
-                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie })), actors: [], allow: {}, left: eligibleMovers().length };
+                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
                 const cur = m.step === 'charge' ? m.queue[m.qi] : null;
-                const actors = m.step === 'charge' ? (cur ? allBattleUnits().filter((u) => u.id === cur.id) : []) : (m.step === 'move' ? eligibleMovers().filter((u) => u.team === m.active) : []);
+                const actors = m.step === 'charge' ? (cur ? allBattleUnits().filter((u) => u.id === (cur.mutual && cur.plan?.choice ? cur.plan.choice.unit : cur.id)) : []) : (m.step === 'move' ? eligibleMovers().filter((u) => u.team === m.active) : []);
                 for (const u of actors) {
                     if (!admin && !(name && ci(u.owner, name))) continue;
                     view.m.actors.push(u.id);
@@ -1611,16 +1613,16 @@ function announceInitiative(title) {
     // Ce dé ne sert qu'au placement ; un nouveau dé désigne à chaque tour l'équipe qui commence les déplacements.
     if (!shared.length) { battleLog('🗺️ Secteurs séparés : les deux équipes placent en même temps (pas de dé).'); return; }
     const dice = [];
-    for (const { c, i } of shared) dice.push({ label: `Secteur ${i + 1} · ${tName('t1')}`, sides: 6, v: c.roll.t1, ok: c.first === 't1' }, { label: `Secteur ${i + 1} · ${tName('t2')}`, sides: 6, v: c.roll.t2, ok: c.first === 't2' });
+    for (const { c, i } of shared) dice.push({ label: `Secteur ${i + 1} · ${tName('t1')}`, sides: 10, v: c.roll.t1, ok: c.first === 't1' }, { label: `Secteur ${i + 1} · ${tName('t2')}`, sides: 10, v: c.roll.t2, ok: c.first === 't2' });
     if (shared.length === 1) dice.forEach((d) => { d.label = d.label.replace(/^Secteur \d+ · /, ''); });
     const text = shared.length === 1 ? `${tName(shared[0].c.first)} place en premier.` : `${shared.map(({ c, i }) => `secteur ${i + 1} : ${tName(c.first)} place en premier`).join(' ; ')}.`;
     announceRoll(title, dice, text);
     battleLog(`🎲 ${title} : ${shared.map(({ c, i }) => `${shared.length > 1 ? `secteur ${i + 1} ` : ''}${tName('t1')} ${c.roll.t1} · ${tName('t2')} ${c.roll.t2}`).join(' ; ')} → ${text}`);
 }
-// Dé d'initiative : chaque équipe lance un D6, on relance en cas d'égalité.
+// Dé d'initiative : chaque équipe lance un d10, on relance en cas d'égalité.
 function rollInitiative() {
     let roll;
-    do { roll = { t1: rollD(6), t2: rollD(6) }; } while (roll.t1 === roll.t2);
+    do { roll = { t1: rollD(10), t2: rollD(10) }; } while (roll.t1 === roll.t2); // d10 pour limiter les égalités (tous les tirages au sort)
     return { roll, first: roll.t1 > roll.t2 ? 't1' : 't2' };
 }
 // Aires des sections (même calcul que l'aire de bonus du client) : régions de la carte délimitées par les frontières (disques, triangles hors zones),
@@ -1874,6 +1876,8 @@ function moveAllowed(u) {
     const me = unitPos(u.id);
     if (!me || !m) return [];
     const isCharge = m.step === 'charge';
+    const cur = isCharge ? m.queue[m.qi] : null;
+    if (cur?.mutual) return (cur.plan?.choice ? cur.plan.choice.unit : cur.id) === u.id ? mutualTiles(cur) : [];
     const order = L.b.orders[u.id];
     const tp = isCharge && order?.target ? unitPos(order.target) : null;
     if (isCharge && !tp) return [];
@@ -1926,17 +1930,169 @@ function buildChargeQueue() {
         const a = unitPos(u.id), t = unitPos(o.target);
         if (a && t) q.push({ id: u.id, target: o.target, dist: hexDistance(a, t), tie: 0 });
     }
+    // Charge mutuelle : A charge B et B charge A → une seule entrée (rencontre à mi-chemin).
+    for (const x of q) {
+        if (x.drop) continue;
+        const y = q.find((z) => !z.drop && z !== x && z.id === x.target && z.target === x.id);
+        if (y) { y.drop = true; x.mutual = true; }
+    }
+    for (let i = q.length - 1; i >= 0; i--) if (q[i].drop) q.splice(i, 1);
     const groups = {};
     for (const x of q) (groups[x.dist] = groups[x.dist] || []).push(x);
     for (const g of Object.values(groups)) {
         if (g.length < 2) continue;
         const seen = new Set();
-        for (const x of g) { let r; do { r = rollD(20); } while (seen.has(r)); seen.add(r); x.tie = r; }
+        for (const x of g) { let r, k = 0; do { r = rollD(10); } while (seen.has(r) && ++k < 50 && seen.size < 10); seen.add(r); x.tie = r; } // d10, relancé en cas d'égalité
         battleLog(`🎲 ${g.length} charges à ${g[0].dist} hexagone(s) : dé pour les départager.`);
         const best = Math.max(...g.map((x) => x.tie));
-        announceRoll(`Charges à égalité (${g[0].dist} hex)`, g.map((x) => { const u = findUnitAny(x.id); return { label: u ? `${u.line.name} ${u.idx}` : '?', sides: 20, v: x.tie, ok: x.tie === best }; }), 'Le plus haut charge en premier.');
+        announceRoll(`Charges à égalité (${g[0].dist} hex)`, g.map((x) => { const u = findUnitAny(x.id); return { label: u ? `${u.line.name} ${u.idx}` : '?', sides: 10, v: x.tie, ok: x.tie === best }; }), 'Le plus haut charge en premier.');
     }
     return q.sort((a, b) => a.dist - b.dist || b.tie - a.tie);
+}
+
+
+/* ---------- Charge : prise à revers et visibilité de la cible (vérifiées à la pose de l'ordre) ---------- */
+
+// Hauteur d'une tuile : colline 1 ; fortification ou village à toit plat 1 ; les deux (sur une colline) 2.
+function groundLevel(tile) {
+    const g = state.gridData[tile] || {};
+    return ((g.terrain ?? 'plain') === 'hill' ? 1 : 0) + (['fortress', 'fortress-half', 'village-flat'].includes(g.object) ? 1 : 0);
+}
+// Cible prise à revers : le trait tracé du centre de la tuile de la cible au centre de celle de l'unité qui charge sort de l'hexagone
+// de la cible par un de ses 3 côtés arrière. Les 3 côtés avant couvrent ±90° autour de l'orientation ; un trait qui passe exactement
+// par le sommet entre un côté avant et un côté arrière compte comme avant.
+function chargeRear(a, b) { return throughRear(b, a); }
+// Le trait tracé du centre de l'unité u vers le centre de l'unité v sort-il par un des 3 côtés arrière de u ?
+function throughRear(u, v) {
+    const pu = unitPos(u.id), pv = unitPos(v.id);
+    const o = state.landing.b.orient[u.id];
+    if (!pu || !pv || !Number.isInteger(o) || pu === pv) return false;
+    const P = hexXY(pu), Q = hexXY(pv);
+    const ang = Math.atan2(Q.y - P.y, Q.x - P.x) * 180 / Math.PI;
+    const diff = Math.abs(((((ang - o * 60) % 360) + 540) % 360) - 180);
+    return diff > 90 + 1e-6;
+}
+// Visibilité de la cible : trait du centre de la tuile de l'unité qui charge au centre de celle de la cible.
+// On regarde au niveau de la plus haute des deux unités : une tuile bloque si c'est une montagne (toujours), si elle est plus haute que ce niveau,
+// ou si elle est à ce niveau et porte un obstacle (forêt, village à toit, unité). Plus haut, on voit par-dessus les obstacles d'en bas.
+function chargeSight(a, b) {
+    const pa = unitPos(a.id), pb = unitPos(b.id);
+    if (!pa || !pb) return { seen: false, why: 'unité absente' };
+    if (throughRear(a, b)) return { seen: false, why: 'dans son dos' }; // le trait part par un côté arrière de l'unité qui charge
+    const L = Math.max(groundLevel(pa), groundLevel(pb)); // vision réciproque : on regarde au niveau de la plus haute des deux
+    const occ = new Set(allBattleUnits().filter((x) => x.id !== a.id && x.id !== b.id).map((x) => unitPos(x.id)).filter(Boolean));
+    const blocker = (t) => {
+        const g = state.gridData[t] || {};
+        if ((g.terrain ?? 'plain') === 'mountain') return 'montagne';
+        const h = groundLevel(t);
+        if (h > L) return h === 1 && (g.terrain ?? 'plain') === 'hill' ? 'colline' : 'hauteur';
+        if (h === L) { if (g.object === 'forest') return 'forêt'; if (g.object === 'village') return 'village'; if (occ.has(t)) return 'unité'; }
+        return null;
+    };
+    const e = [1e-6, 2e-6, -3e-6];
+    const tryLine = (eps) => { for (const t of hexLine(pa, pb, eps).slice(1, -1)) { const w = blocker(t); if (w) return w; } return null; };
+    const w1 = tryLine(e), w2 = w1 ? tryLine(e.map((x) => -x)) : null; // trait le long d'un bord : il suffit qu'un côté soit dégagé
+    return w1 && w2 ? { seen: false, why: w1 } : { seen: true, why: '' };
+}
+
+/* ---------- Charges mutuelles : rencontre à mi-chemin sur le trajet réel ---------- */
+
+// Sauvegarde de terrain d'une tuile pour le corps à corps (colline +1, forêt +2, construction +2 ; pas de colline ni de fortification pour une unité volante).
+function terrainSave(tile, u) {
+    const g = state.gridData[tile] || {};
+    const fly = unitMob(u).fly;
+    let v = 0;
+    if ((g.terrain ?? 'plain') === 'hill' && !fly) v += 1;
+    if (g.object === 'forest') v += 2;
+    if (['wall', 'village', 'village-flat', 'bridge'].includes(g.object) || (['fortress', 'fortress-half'].includes(g.object) && !fly)) v += 2;
+    return v;
+}
+// Trajet réel le plus court entre deux unités (coût 1 par tuile en charge) : ni montagne, ni eau sans pont (sauf si les deux volent ou sautent,
+// ou nagent pour l'eau), ni tuile occupée par une autre unité. Renvoie la liste des tuiles, extrémités comprises, ou null.
+function chargePath(a, b) {
+    const pa = unitPos(a.id), pb = unitPos(b.id);
+    if (!pa || !pb) return null;
+    const ma = unitMob(a), mb = unitMob(b);
+    const air = ma.air && mb.air, swim = (ma.swim || ma.air) && (mb.swim || mb.air);
+    const occ = new Set(allBattleUnits().filter((x) => x.id !== a.id && x.id !== b.id).map((x) => unitPos(x.id)).filter(Boolean));
+    const prev = new Map([[pa, null]]);
+    let fr = [pa];
+    while (fr.length && !prev.has(pb)) {
+        const next = [];
+        for (const k of fr) {
+            const [c, r] = k.split(',').map(Number);
+            for (const [nc, nr] of hexNeighbors(c, r)) {
+                const nk = `${nc},${nr}`;
+                if (prev.has(nk) || !mapHas(nc, nr)) continue;
+                if (nk !== pb) {
+                    const g = state.gridData[nk] || {};
+                    const ter = g.terrain ?? 'plain';
+                    if (occ.has(nk)) continue;
+                    if (!air && ter === 'mountain') continue;
+                    if (ter === 'water' && g.object !== 'bridge' && !swim) continue;
+                }
+                prev.set(nk, k); next.push(nk);
+            }
+        }
+        fr = next;
+    }
+    if (!prev.has(pb)) return null;
+    const path = [];
+    for (let k = pb; k; k = prev.get(k)) path.unshift(k);
+    return path;
+}
+// Prépare la charge mutuelle en cours : trajet, partage du chemin (dé d10 si nombre impair de tuiles), portées, avantage de terrain.
+// plan.k = nombre de tuiles parcourues par A (B en parcourt n - k) ; plan.choice = unité avantagée qui choisit où s'arrêter.
+function prepareMutual(it) {
+    if (!it?.mutual || it.plan) return;
+    const A = allBattleUnits().find((x) => x.id === it.id), B = allBattleUnits().find((x) => x.id === it.target);
+    const path = A && B ? chargePath(A, B) : null;
+    if (!path) { it.plan = { none: true }; battleLog('⚔️ Charge mutuelle sans trajet possible : chaque unité reste en place.'); return; }
+    const n = path.length - 2; // tuiles libres entre les deux unités
+    const RA = moveRange(A), RB = moveRange(B);
+    let kA = Math.floor(n / 2), roll = null;
+    if (n % 2 === 1) {
+        let r; do { r = { a: rollD(10), b: rollD(10) }; } while (r.a === r.b);
+        roll = r; if (r.a > r.b) kA++;
+        announceRoll('Charge mutuelle : qui avance d’une tuile de plus ?', [{ label: unitLabel(A), sides: 10, v: r.a, ok: r.a > r.b }, { label: unitLabel(B), sides: 10, v: r.b, ok: r.b > r.a }], `${unitLabel(r.a > r.b ? A : B)} avance d’une tuile de plus.`);
+    }
+    // portées : celui qui ne peut pas atteindre sa part laisse le reste à l'autre, dans la limite de sa propre portée
+    if (kA > RA) kA = RA;
+    if (n - kA > RB) kA = Math.min(RA, n - RB);
+    const contact = kA + RB >= n && kA <= RA && n - kA <= RB;
+    const plan = { path, n, kA, roll, contact, RA, RB };
+    if (!contact) { plan.kA = Math.min(RA, n); plan.kB = Math.min(RB, n - plan.kA); }
+    // avantage de terrain : si les modificateurs changent différemment, l'unité la mieux placée au départ peut raccourcir son déplacement
+    if (contact) {
+        const sA0 = terrainSave(path[0], A), sB0 = terrainSave(path[n + 1], B);
+        const sA1 = terrainSave(path[plan.kA], A), sB1 = terrainSave(path[plan.kA + 1], B);
+        if (sA1 - sA0 !== sB1 - sB0 && sA0 !== sB0) {
+            const X = sA0 > sB0 ? 'A' : 'B';
+            const opts = [];
+            if (X === 'A') { for (let k = 0; k <= plan.kA; k++) if (terrainSave(path[k], A) >= sA0 && n - k <= RB) opts.push(k); }
+            else { const kB = n - plan.kA; for (let k = 0; k <= kB; k++) if (terrainSave(path[n + 1 - k], B) >= sB0 && n - k <= RA) opts.push(k); }
+            if (opts.length) plan.choice = { side: X, unit: X === 'A' ? A.id : B.id, opts, start: X === 'A' ? sA0 : sB0 };
+        }
+    }
+    it.plan = plan;
+    battleLog(`⚔️ Charge mutuelle ${unitLabel(A)} ⇄ ${unitLabel(B)} : ${n} tuile(s) entre elles${plan.contact ? '' : ' — portées insuffisantes, pas de contact'}${plan.choice ? ` · ${unitLabel(plan.choice.unit === A.id ? A : B)} (mieux placée) choisit où s’arrêter` : ''}.`);
+}
+// Tuiles proposées pour la charge mutuelle en cours, et position finale des deux unités pour une tuile choisie.
+function mutualTiles(it) {
+    const p = it.plan;
+    if (!p || p.none) return [];
+    if (p.choice) return p.choice.side === 'A' ? p.choice.opts.map((k) => p.path[k]) : p.choice.opts.map((k) => p.path[p.n + 1 - k]);
+    return [p.path[p.kA]];
+}
+function mutualResolve(it, tile) {
+    const p = it.plan;
+    if (!p.contact) return { a: p.path[p.kA], b: p.path[p.n + 1 - p.kB] };
+    let kA = p.kA;
+    if (p.choice) {
+        const idx = p.path.indexOf(tile);
+        kA = p.choice.side === 'A' ? idx : idx - 1; // B s'arrête sur la tuile choisie, A vient juste à côté
+    }
+    return { a: p.path[kA], b: p.path[kA + 1] };
 }
 function startMoveStep() {
     const L = state.landing, m = L.m;
@@ -1946,7 +2102,7 @@ function startMoveStep() {
     const teams = new Set(left.map((u) => u.team).filter(Boolean));
     if (teams.size > 1) {
         // Nouveau dé à chaque tour pour savoir qui commence les déplacements (gardé si le MJ annule puis rejoue).
-        if (!m.roll) { const r = rollInitiative(); m.roll = r.roll; m.first = r.first; announceRoll('Déplacements : qui commence ?', [{ label: tName('t1'), sides: 6, v: r.roll.t1, ok: r.first === 't1' }, { label: tName('t2'), sides: 6, v: r.roll.t2, ok: r.first === 't2' }], `${tName(r.first)} commence les déplacements.`); }
+        if (!m.roll) { const r = rollInitiative(); m.roll = r.roll; m.first = r.first; announceRoll('Déplacements : qui commence ?', [{ label: tName('t1'), sides: 10, v: r.roll.t1, ok: r.first === 't1' }, { label: tName('t2'), sides: 10, v: r.roll.t2, ok: r.first === 't2' }], `${tName(r.first)} commence les déplacements.`); }
         m.active = m.first;
         battleLog(`🎲 Déplacements : ${tName('t1')} ${m.roll.t1} · ${tName('t2')} ${m.roll.t2} → ${tName(m.active)} commence.`);
     } else {
@@ -1959,6 +2115,7 @@ function advanceMove(justPlayed) {
     if (m.step === 'charge') {
         m.qi++;
         if (m.qi >= m.queue.length) { battleLog('⚔️ Charges terminées.'); startMoveStep(); }
+        else prepareMutual(m.queue[m.qi]);
         return;
     }
     const left = eligibleMovers();
@@ -2201,7 +2358,7 @@ function fireStart(step) {
         const r = rollInitiative();
         f.rolls[step] = r.roll; f.active = r.first;
         battleLog(`🎲 ${step === 'art' ? 'Artillerie' : 'Tirs'} : ${teamLabel('t1')} ${r.roll.t1} · ${teamLabel('t2')} ${r.roll.t2} → ${teamLabel(r.first)} commence.`);
-        announceRoll(step === 'art' ? 'Artillerie : qui commence ?' : 'Tirs : qui commence ?', [{ label: teamLabel('t1'), sides: 6, v: r.roll.t1, ok: r.first === 't1' }, { label: teamLabel('t2'), sides: 6, v: r.roll.t2, ok: r.first === 't2' }], `${teamLabel(r.first)} commence.`);
+        announceRoll(step === 'art' ? 'Artillerie : qui commence ?' : 'Tirs : qui commence ?', [{ label: teamLabel('t1'), sides: 10, v: r.roll.t1, ok: r.first === 't1' }, { label: teamLabel('t2'), sides: 10, v: r.roll.t2, ok: r.first === 't2' }], `${teamLabel(r.first)} commence.`);
     } else {
         f.rolls[step] = null; f.active = [...teams][0];
         battleLog(`${step === 'art' ? '💥 Artillerie' : '🏹 Tirs'} : seule ${teamLabel(f.active)} peut tirer.`);
@@ -3568,6 +3725,11 @@ io.on('connection', (socket) => {
             const max = o.type === 'charge' ? 5 + (gord === 'charge' && nearGen ? 2 : 0) : ({ court: FIRE_SHORT, long: FIRE_LONG, art: ART_RANGE }[entry.range]);
             if (d > max) return landingFail(ack, `Cible trop loin (${d} hexagones, maximum ${max}).`);
             entry.target = t.id;
+            if (o.type === 'charge') {
+                const A = allBattleUnits().find((x) => x.id === f.id), B = allBattleUnits().find((x) => x.id === t.id);
+                const sg = chargeSight(A, B);
+                entry.rear = chargeRear(A, B); entry.seen = sg.seen; if (!sg.seen) entry.why = sg.why;
+            }
         } else if ((o.type === 'depl' || o.type === 'marche') && o.tile != null) {
             // Destination facultative : sans destination, le joueur choisit au moment des déplacements de bouger ou non.
             const tile = battleCell(o.tile);
@@ -3583,6 +3745,18 @@ io.on('connection', (socket) => {
         }
         L.b.orders[f.id] = entry;
         landingOk(ack);
+    });
+
+    // Avant de confirmer une charge : prise à revers ? cible visible ?
+    socket.on('battle-charge-check', (payload, ack) => {
+        const name = socket.data.name;
+        const L = state.landing;
+        if (!name || L.phase !== 'orders' || !L.b) return reply(ack, { success: false, message: 'Ce n’est pas la pose des ordres.' });
+        const f = findLine(name, payload?.unit);
+        const A = f && allBattleUnits().find((x) => x.id === f.id), B = allBattleUnits().find((x) => x.id === String(payload?.target));
+        if (!A || !B) return reply(ack, { success: false, message: 'Unité inconnue.' });
+        const sg = chargeSight(A, B);
+        reply(ack, { success: true, rear: chargeRear(A, B), seen: sg.seen, why: sg.why });
     });
 
     // Portée réelle (trajet compris) d'une de mes unités pour un ordre de déplacement ou de marche forcée.
@@ -3653,6 +3827,7 @@ io.on('connection', (socket) => {
         L.m.queue = buildChargeQueue();
         battleLog('👣 Les ordres sont révélés. Phase de déplacement : d’abord les charges, de la plus proche à la plus lointaine.');
         if (!L.m.queue.length) { battleLog('Aucune charge ordonnée.'); startMoveStep(); }
+        else prepareMutual(L.m.queue[0]);
         landingOk(ack);
     });
 
@@ -3667,7 +3842,8 @@ io.on('connection', (socket) => {
         if (!socket.data.isAdmin && !ci(u.owner, name)) { landingFail(ack, 'Ce n’est pas votre unité.'); return null; }
         if (m.step === 'charge') {
             const it = m.queue[m.qi];
-            if (!it || it.id !== u.id) { landingFail(ack, 'Ce n’est pas le tour de cette unité (charges dans l’ordre).'); return null; }
+            const who = it?.mutual && it.plan?.choice ? it.plan.choice.unit : it?.id;
+            if (!it || who !== u.id) { landingFail(ack, 'Ce n’est pas le tour de cette unité (charges dans l’ordre).'); return null; }
         } else if (m.step === 'move') {
             if (u.team !== m.active) { landingFail(ack, 'Ce n’est pas le tour de votre équipe.'); return null; }
             if (m.moved[u.id] || !eligibleMovers().some((x) => x.id === u.id)) { landingFail(ack, 'Cette unité n’a pas d’ordre de déplacement à exécuter.'); return null; }
@@ -3676,7 +3852,7 @@ io.on('connection', (socket) => {
     };
     const pushMoveUndo = (u, tid) => {
         const L = state.landing, m = L.m;
-        m.stack.push({ id: u.id, pos: L.b.pos[u.id] ?? null, orient: L.b.orient[u.id] ?? null, tid: tid ?? null, torient: tid ? (L.b.orient[tid] ?? null) : null, step: m.step, qi: m.qi, active: m.active, moved: Boolean(m.moved[u.id]) });
+        m.stack.push({ id: u.id, pos: L.b.pos[u.id] ?? null, orient: L.b.orient[u.id] ?? null, tid: tid ?? null, torient: tid ? (L.b.orient[tid] ?? null) : null, tpos: tid ? (L.b.pos[tid] ?? null) : null, step: m.step, qi: m.qi, active: m.active, moved: Boolean(m.moved[u.id]) });
         if (m.stack.length > 300) m.stack.shift();
     };
 
@@ -3689,6 +3865,20 @@ io.on('connection', (socket) => {
         if (!tile) return landingFail(ack, 'Tuile invalide.');
         if (!moveAllowed(u).includes(tile)) return landingFail(ack, 'Tuile hors de portée, occupée ou interdite (zone d’exclusion, terrain).');
         const it = m.step === 'charge' ? m.queue[m.qi] : null;
+        if (it?.mutual) {
+            // Les deux unités avancent l'une vers l'autre sur le trajet ; l'unité avantagée a pu choisir où s'arrêter.
+            const A = allBattleUnits().find((x) => x.id === it.id), B = allBattleUnits().find((x) => x.id === it.target);
+            pushMoveUndo(A, B.id);
+            m.stack[m.stack.length - 1].mutual = true;
+            const fin = mutualResolve(it, tile);
+            const setPos = (x, t) => { if (t === L.placed[x.id]) delete L.b.pos[x.id]; else L.b.pos[x.id] = t; };
+            setPos(A, fin.a); setPos(B, fin.b);
+            L.b.orient[A.id] = facing(fin.a, fin.b); L.b.orient[B.id] = facing(fin.b, fin.a);
+            m.moved[A.id] = true; m.moved[B.id] = true;
+            battleLog(`⚔️ ${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' (pas de contact : portées insuffisantes)'}.`);
+            advanceMove(u.team);
+            return landingOk(ack);
+        }
         const tid = it ? it.target : null;
         pushMoveUndo(u, tid);
         const moved = tile !== unitPos(u.id);
@@ -3732,7 +3922,10 @@ io.on('connection', (socket) => {
         const x = m.stack.pop();
         if (x.pos) L.b.pos[x.id] = x.pos; else delete L.b.pos[x.id];
         if (x.orient != null) L.b.orient[x.id] = x.orient; else delete L.b.orient[x.id];
-        if (x.tid) { if (x.torient != null) L.b.orient[x.tid] = x.torient; else delete L.b.orient[x.tid]; }
+        if (x.tid) {
+            if (x.torient != null) L.b.orient[x.tid] = x.torient; else delete L.b.orient[x.tid];
+            if (x.mutual) { if (x.tpos) L.b.pos[x.tid] = x.tpos; else delete L.b.pos[x.tid]; }
+        }
         if (!x.moved) delete m.moved[x.id];
         m.step = x.step; m.qi = x.qi; m.active = x.active;
         battleLog('↩️ Dernière action annulée par le MJ.');
