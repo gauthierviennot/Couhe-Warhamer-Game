@@ -278,7 +278,7 @@
         .noeye > i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(1.15); font-style: normal; }
         #mapConfirm { position: fixed; z-index: 63; display: flex; gap: 6px; align-items: center; pointer-events: auto; }
         #mapConfirm button { border: 2px solid #6a1b1b; border-radius: 10px; background: #fff; color: #6a1b1b; font: 700 14px/1 system-ui, sans-serif; padding: 8px 10px; box-shadow: 0 2px 8px #0006; cursor: pointer; white-space: nowrap; }
-        #mapConfirm button.ok { background: #2e7d32; border-color: #1b5e20; color: #fff; }
+        #mapConfirm button.ok { background: #2e7d32; border-color: #1b5e20; color: #fff; font-size: 20px; min-width: 44px; }
         #mapConfirm button.x { padding: 8px 9px; }
         #diceAnim { position: fixed; z-index: 90; left: 12px; top: 12px; max-width: min(92vw, 520px); }
         #diceAnim .da-card { position: relative; }
@@ -609,7 +609,8 @@
         // des aires de bonus ne servent plus et ne sont plus dessinés. Ils restent enregistrés sur la carte : revenir au placement les fait réapparaître.
         function battleMarksHidden() {
             let v = null; try { v = LAND.view; } catch { return null; } // LAND pas encore créé au tout premier dessin
-            if (!v || !['orders', 'move', 'fire'].includes(v.phase)) return null;
+            const done = ['orders', 'move', 'fire'].includes(v?.phase) || (v?.phase === 'bplace' && v.b?.allPlaced); // placement de bataille terminé
+            if (!done) return null;
             return (tile) => tile.mark === 'disc' || tile.mark === 'cross'; // les triangles restent : ils servent ensuite à compter les points forts
         }
 
@@ -3370,6 +3371,7 @@
                 const terrain = tile?.terrain ?? 'plain';
                 if (terrain === 'mountain') return false;
                 if (tile?.object === 'village') return false; // jamais dans un village simple (toit plat permis)
+                if (isCavC(unit) && CAV_BLOCK_C.includes(tile?.object)) return false; // cavalerie : ni fortification ni village à toit plat
                 if (terrain === 'water') return swimBA(unit) || tile?.object === 'bridge';
                 return true;
             };
@@ -3383,7 +3385,6 @@
                         if (nc < 0 || nr < 0 || nc >= state.cols || nr >= state.rows) continue;
                         const nk = `${nc},${nr}`;
                         if (dist.has(nk) || blockedTile(nk) || lim.edges.has(edgeKey(key, nk))) continue; // une frontière ne s'atteint ni ne se traverse
-                        if (!passC(unit, key, nk)) continue; // placement sans coût de terrain, mais pas à travers l'eau ni la montagne ; pont par ses extrémités
                         dist.set(nk, step);
                         next.push(nk);
                     }
@@ -3779,7 +3780,20 @@
             // Les étiquettes gardent une taille lisible (et touchable) même quand la carte est très dézoomée.
             const boost = Math.max(1, 24 / (R * 0.62 * VW.scale));
             const chipH = R * 0.62 * boost;
-            const unitW = R * 1.9 * boost;
+            // Largeur des étiquettes ajustée à l'identifiant le plus long (sigle + numéro, figurines restantes comprises) et aux symboles possibles.
+            const unitW = (() => {
+                c.save();
+                c.font = `600 ${chipH * 0.46}px system-ui, sans-serif`;
+                let tx = 0, right = 0;
+                for (const u of LAND.units) {
+                    const loss = u.alive && u.alive[0] < u.alive[1] ? `·${u.alive[0]}` : '';
+                    tx = Math.max(tx, c.measureText(`${sigleOf(u)} ${u.num ?? u.idx}${loss}`).width);
+                    right = Math.max(right, (u.stdMax > 0 ? 0.62 : 0) + (u.near ? 0.68 : 0) + (u.gen ? 0.92 : 0) + (u.comp ? 0.58 : 0));
+                }
+                c.restore();
+                const left = LAND.view.phase === 'place' && !LAND.simOn ? 0.78 : 0.28;
+                return Math.max(chipH * 1.6, tx + chipH * (left + right + 0.3));
+            })();
             const PER_COL = 8;
             const drawFlag = (fx, fy, h, state) => {
                 c.save();
@@ -3840,6 +3854,14 @@
                 const place = (u, ox, oy, w) => {
                     const dim = dragSet && dragSet.has(u.id);
                     const mine = ciEq(u.owner, meName());
+                    { // étiquette au plus juste : son identifiant et ses symboles, sans place perdue (centrée sur l'emplacement prévu)
+                        c.font = `600 ${chipH * 0.46}px system-ui, sans-serif`;
+                        const loss = u.alive && u.alive[0] < u.alive[1] ? `·${u.alive[0]}` : '';
+                        const tw = c.measureText(`${sigleOf(u)} ${u.num ?? u.idx}${loss}`).width;
+                        const lp = !opt && mine && LAND.view.phase === 'place' && !LAND.simOn ? 0.78 : 0.28;
+                        const rw = (u.stdMax > 0 && (mine || u.std) ? 0.62 : 0) + (u.near && (mine || u.chev) ? 0.68 : 0) + (u.gen ? 0.92 : 0) + (u.comp ? 0.58 : 0);
+                        w = Math.min(w, Math.max(chipH * 1.4, tw + chipH * (lp + rw + 0.3)));
+                    }
                     c.globalAlpha = dim ? 0.3 : 1;
                     roundRectPath(c, ox - w / 2, oy - chipH / 2, w, chipH, chipH * 0.3);
                     c.fillStyle = 'rgba(255,255,255,0.96)';
@@ -4080,6 +4102,7 @@
                 for (const u of LAND.units) {
                     if (!u.tile || u.orient == null) continue;
                     if (LAND.pressHide && u.id !== LAND.pressHide) continue;
+                    if ((byTile.get(u.tile) || []).length !== 1) continue; // tuile à plusieurs unités : étiquettes rangées à côté, la pointe reste visible
                     const [cc, rr] = keyToHex(u.tile);
                     const o = hexCenter(cc, rr), ang = u.orient * Math.PI / 3;
                     const side = u.orient === 0 || u.orient === 3;
@@ -4597,7 +4620,7 @@
             }
         }
 
-        const PHASE_NAME = { zones: '1 · Regroupement des zones', choose: '3 · Choix des zones', place: '4 · Dépôt des unités', locked: '5 · Placements verrouillés', bplace: '6 · Placement de bataille', orders: '7 · Ordres', move: '8 · Déplacements', fire: '9 · Tirs' };
+        const PHASE_NAME = { zones: '1 · Regroupement des zones', choose: '3 · Choix des zones', place: '4 · Dépôt des unités', locked: '5 · Débarquement verrouillé', bplace: '6 · Placement de bataille', orders: '7 · Ordres', move: '8 · Déplacements', fire: '9 · Tirs' };
 
 
         /* ============================================================ */
@@ -4645,26 +4668,10 @@
             void home;
         }
 
-        // Passage d'une tuile à sa voisine (placement) : montagne seulement en vol ou en saut ; eau seulement par un pont (ou Saurus BA, vol, saut) ;
-        // pont = tuile orientée, on n'y entre et n'en sort que par ses deux extrémités (axe dir / dir + 3).
-        function bridgeOkC(a, b) {
-            for (const [t, o] of [[a, b], [b, a]]) {
-                const g = state.gridData[t];
-                if (g?.object !== 'bridge') continue;
-                const d = Number(g.dir) || 0, k = dirOf(t, o);
-                if (k !== d && k !== (d + 3) % 6) return false;
-            }
-            return true;
-        }
-        function passC(unit, a, b) {
-            const air = unit?.kin === 'v' || unit?.kin === 'vs' || unit?.kin === 'j';
-            if (air) return true;
-            const g = state.gridData[b] || {}, ter = g.terrain ?? 'plain';
-            if (ter === 'mountain') return false;
-            if (swimBA(unit)) return true;
-            if (ter === 'water' && g.object !== 'bridge') return false;
-            return bridgeOkC(a, b);
-        }
+        // Placement de bataille : les obstacles entre la tuile de dépôt et la tuile d'arrivée ne comptent pas ; seule la tuile d'arrivée est contrôlée
+        // (canEnd / pickOk : montagne, eau sauf pont et Saurus BA, village simple, cavalerie sur fortification ou village à toit plat).
+        const CAV_BLOCK_C = ['fortress', 'fortress-half', 'village-flat'];
+        const isCavC = (unit) => /^c/i.test(String(unit?.type || ''));
         // Bonus d'armée (BA) : seulement les unités dont le nom porte « BA » entre parenthèses ; Saurus BA = se tiennent sur l'eau.
         function hasBA(unit) { if (/\(merc\.\)/.test(String(unit?.name || ''))) return false; return (String(unit?.name || '').match(/\(([^)]*)\)/g) || []).some((g) => g.slice(1, -1).split(',').some((t) => t.trim().toLowerCase() === 'ba')); }
         function swimBA(unit) { return unit?.army === 'saurus' && hasBA(unit); }
@@ -4678,6 +4685,7 @@
             const terrain = t?.terrain ?? 'plain';
             if (terrain === 'mountain') return false;
             if (t?.object === 'village') return false; // jamais dans un village simple
+            if (isCavC(unit) && CAV_BLOCK_C.includes(t?.object)) return false; // cavalerie : ni fortification ni village à toit plat
             if (terrain === 'water') return swimBA(unit) || t?.object === 'bridge';
             return true;
         }
@@ -4709,7 +4717,7 @@
                 document.body.appendChild(box);
             }
             const sig = cf.buttons.map((b) => b.label + (b.cls || '')).join('|');
-            if (box.dataset.sig !== sig) { box.innerHTML = cf.buttons.map((b, i) => `<button type="button" data-i="${i}" class="${b.cls || ''}">${b.label}</button>`).join(''); box.dataset.sig = sig; }
+            if (box.dataset.sig !== sig) { box.innerHTML = cf.buttons.map((b, i) => `<button type="button" data-i="${i}" class="${b.cls || ''}"${b.title ? ` title="${b.title}" aria-label="${b.title}"` : ''}>${b.label}</button>`).join(''); box.dataset.sig = sig; }
             const rect = el.canvas.getBoundingClientRect();
             let ax = null, ay = 0, aw = 0, ah = 0;
             if (cf.unit) { const h = LAND.hits.find((x) => x.unit.id === cf.unit); if (h) { ax = rect.left + h.x; ay = rect.top + h.y; aw = h.w; ah = h.h; } }
@@ -5210,7 +5218,7 @@
             if (LAND.pend && (batMode() || movMode())) {
                 // Bouton de validation juste sous la tuile choisie (sous les flèches d'orientation).
                 showMapConfirm({ tile: LAND.pend.tile, below: 2.1, buttons: [
-                    { label: movMode() ? '✓ Valider le déplacement' : '✓ Valider le placement', cls: 'ok', fn: () => validatePend() },
+                    { label: '✓', title: movMode() ? 'Valider le déplacement' : 'Valider le placement', cls: 'ok', fn: () => validatePend() },
                     { label: '✕', cls: 'x', fn: () => clearPend() }
                 ] });
             } else if (LAND.confirm?.tile && !LAND.confirm.zone) hideMapConfirm();
@@ -5292,9 +5300,9 @@
                     h += playersTable(v.players || [], true);
                     h += (v.progress || []).map((p) => `<div class="lp-row"><span class="lp-dot" style="background:${TEAM_COL[p.team] || '#888'}"></span><span class="lp-grow">${p.name}</span><b>${p.placed}/${p.total}</b></div>`).join('');
                     h += '<p class="lp-hint">Les placements de l’équipe adverse restent cachés jusqu’au verrouillage.</p>';
-                    h += `<div class="lp-actions"><button class="btn btn-primary" data-land="lock">🔒 Verrouiller les placements</button></div>`;
+                    h += `<div class="lp-actions"><button class="btn btn-primary" data-land="lock">🔒 Verrouiller le débarquement</button></div>`;
                 } else if (v.phase === 'locked') {
-                    h += '<p class="lp-hint">Placements verrouillés : tous les joueurs voient toutes les unités.</p>';
+                    h += '<p class="lp-hint">Débarquement verrouillé : tous les joueurs voient toutes les unités.</p>';
                 }
                 if (v.phase !== 'zones') h += '<div class="lp-actions"><button class="btn btn-dark" data-land="back">◀ Étape précédente</button></div>';
             } else {
@@ -5418,7 +5426,7 @@
                     '<b>▶ Verrouiller</b> quand tout est placé : tout le monde voit alors tous les débarquements. ◀ revient aux choix.',
                     '<b>🗺️ Simulation</b> (bouton du sélecteur, à côté de 📜 et ⚔️) : une carte virtuelle où chaque joueur essaie de déplacer ses unités déposées, dans leur portée (appui long pour la voir ; contour vert, bleu ou doré). Une seule unité par tuile en dehors des tuiles de dépôt ; les montagnes sont interdites et l’eau aussi, sauf pour les Saurus et sur un pont. Le bouton <b>↩️</b> ramène à la carte de dépôt ; <b>↺</b> remet toutes vos unités à leur position de dépôt. Si vous changez la tuile de dépôt d’une unité, sa simulation revient à sa position de départ. Vos coéquipiers voient votre simulation.',
                     'Avant le verrouillage, le serveur garde une sauvegarde automatique de l’état du débarquement : le panneau ⚔️ propose « Restaurer l’état d’avant verrouillage ».'] },
-                locked: { title: 'Phase 4 · Placements verrouillés', items: [
+                locked: { title: 'Phase 4 · Débarquement verrouillé', items: [
                     'Tous les débarquements sont visibles par tous. Plus aucune unité ne bouge.',
                     '<b>Double toucher</b> sur une unité : sa fiche. <b>Appui long</b> : portée de déplacement (dep + bonus de la section de débarquement, contour bleu).',
                     '◀ revient au dépôt des unités (les placements sont conservés).',
@@ -5459,7 +5467,7 @@
                     '<b>Général (trois chevrons noirs dans un rond jaune)</b> : touchez la puce « Général » du sélecteur puis l’une de vos unités posées (plusieurs figurines). Le général ne donne plus de tuiles supplémentaires au dépôt. Les unités à <b>6 hexagones ou moins</b> du général (<b>9</b> pour l’Empire) reçoivent un <b>chevron seul</b> (gris) : touchez-le pour l’activer (doré) sur <b>une seule</b> unité. Au premier placement, en simulation comme en jeu, elle pourra aller <b>3 tuiles plus loin</b> (tuiles au contour doré à l’appui long).',
                     'Vos coéquipiers voient vos unités en direct ; l’autre équipe ne voit rien avant le verrouillage.',
                     '<b>🗺️ Simulation</b> (bouton du sélecteur, à côté de 📜 et ⚔️) : une carte virtuelle où chaque joueur essaie de déplacer ses unités déposées, dans leur portée (appui long pour la voir ; contour vert, bleu ou doré). Une seule unité par tuile en dehors des tuiles de dépôt ; les montagnes sont interdites et l’eau aussi, sauf pour les Saurus et sur un pont. Le bouton <b>↩️</b> ramène à la carte de dépôt ; <b>↺</b> remet toutes vos unités à leur position de dépôt. Si vous changez la tuile de dépôt d’une unité, sa simulation revient à sa position de départ. Vos coéquipiers voient votre simulation.'] },
-                locked: { title: 'Placements verrouillés', items: [
+                locked: { title: 'Débarquement verrouillé', items: [
                     'Tous les débarquements sont maintenant visibles.',
                     '<b>Double toucher</b> sur une unité : sa fiche. <b>Appui long</b> : portée de déplacement, avec le bonus de la section de débarquement (contour bleu).',
                     '<b>🗺️ Simulation</b> : les simulations de l’équipe restent consultables, en lecture seule (bouton 🗺️ du sélecteur, ↩️ pour revenir à la carte).'] },
@@ -5547,7 +5555,7 @@
                 return landingDialog('Revenir au choix des zones ?', '<p>Les joueurs déjà figés <b>gardent leur zone et leurs unités posées</b>. Vous pourrez libérer un joueur à part si besoin, puis figer de nouveau pour donner leurs unités aux joueurs qui n’avaient pas de zone.</p>', [{ label: 'Revenir', cls: 'btn-danger', fn: go }, { label: 'Annuler' }]);
             }
             if (v.phase === 'bplace') {
-                return landingDialog('Revenir aux placements verrouillés ?', '<p>Les positions de bataille et l’orientation des unités seront <b>effacées</b> : chaque unité retrouve sa tuile de débarquement. Le dé sera relancé au prochain passage.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
+                return landingDialog('Revenir au débarquement verrouillé ?', '<p>Les positions de bataille et l’orientation des unités seront <b>effacées</b> : chaque unité retrouve sa tuile de débarquement. Le dé sera relancé au prochain passage.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
             }
             if (v.phase === 'fire') {
                 return landingDialog('Revenir aux déplacements ?', '<p>Les tirs de ce tour sont <b>annulés</b> : les unités retrouvent les pertes qu’elles avaient avant la phase de tir. Les positions sont conservées.</p>', [{ label: 'Annuler' }, { label: 'Revenir', cls: 'btn-danger', fn: go }]);
@@ -5587,8 +5595,8 @@
             document.querySelectorAll('#stackBr .phase-btn').forEach((b) => { b.hidden = !state.isAdmin; });
             if (!state.isAdmin) return;
             const names = { off: 'Débarquement arrêté', zones: '1 · Zones', choose: '2 · Choix', place: '3 · Dépôt', locked: '4 · Verrouillé', bplace: '6 · Placement bataille', orders: '7 · Ordres', move: '8 · Déplacements', fire: '9 · Tirs' };
-            const nextT = { off: 'Lancer le débarquement', zones: 'Affecter les équipes', choose: 'Figer les affectations', place: 'Verrouiller les placements', locked: 'Lancer le placement de bataille', bplace: 'Passer aux ordres', orders: 'Lancer les déplacements', move: 'Passer aux tirs', fire: 'Tour suivant (ordres)' }[LAND.view.phase];
-            const prevT = { off: '—', zones: 'Aucune étape précédente', choose: 'Retour au regroupement', place: 'Retour aux choix (rien n’est effacé)', locked: 'Retour au dépôt', bplace: 'Retour aux placements verrouillés', orders: 'Retour au placement', move: 'Retour aux ordres (positions d’avant les charges)', fire: 'Retour aux déplacements (pertes du tour annulées)' }[LAND.view.phase];
+            const nextT = { off: 'Lancer le débarquement', zones: 'Affecter les équipes', choose: 'Figer les affectations', place: 'Verrouiller le débarquement', locked: 'Lancer le placement de bataille', bplace: 'Passer aux ordres', orders: 'Lancer les déplacements', move: 'Passer aux tirs', fire: 'Tour suivant (ordres)' }[LAND.view.phase];
+            const prevT = { off: '—', zones: 'Aucune étape précédente', choose: 'Retour au regroupement', place: 'Retour aux choix (rien n’est effacé)', locked: 'Retour au dépôt', bplace: 'Retour au débarquement verrouillé', orders: 'Retour au placement', move: 'Retour aux ordres (positions d’avant les charges)', fire: 'Retour aux déplacements (pertes du tour annulées)' }[LAND.view.phase];
             document.querySelector('#stackBr [data-land="next"]').title = `Étape actuelle : ${names[LAND.view.phase]} · Suivant : ${nextT}`;
             document.querySelector('#stackBr [data-land="prev"]').title = `Précédent : ${prevT}`;
             document.querySelector('#stackBr [data-land="prev"]').disabled = LAND.view.phase === 'zones' || LAND.view.phase === 'off';

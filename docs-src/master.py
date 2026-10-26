@@ -56,13 +56,11 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>§ 7 — Film des charges et des déplacements</b> : les déplacements sont maintenant dans le film, après les charges, image par image (une image = un pas d’une tuile).',
-    '<b>§ 1</b> : étiquettes = sigle + numéro unique par joueur, sans nom d’unité (nom dans la fiche, deux touchers).',
-    '<b>§ 4</b> : au placement, pas de passage par l’eau ni la montagne ; pont seulement d’une extrémité à l’autre.',
-    '<b>§ 8</b> : appui long sur une unité (même adverse) : sa capacité de déplacement depuis sa position actuelle.',
     '<b>§ 2</b> : après le placement de bataille, disques et marqueurs + masqués (conservés) ; les triangles restent (points forts).',
+    '<b>§ 4</b> : au placement, les obstacles entre la tuile de dépôt et la tuile d’arrivée ne comptent pas ; seule la tuile d’arrivée doit être permise pour l’unité et son armée (les déplacements, eux, tiennent compte des obstacles du trajet).',
+    '<b>Cavalerie</b> (tableau des terrains, § 4, Annexe B § 6) : elle ne monte ni sur une fortification ni sur un village à toit plat, au placement comme dans tous les déplacements et charges.',
 ]
-NEEDLES = ['<b>Film des charges et des déplacements</b>', '<b>Étiquettes des unités</b>', 'on ne passe ni par l’eau ni par la montagne', '<b>Capacité de déplacement d’une unité</b>', '<b>Une fois le placement de bataille terminé</b>']
+NEEDLES = ['<b>Les obstacles entre la tuile de dépôt', '<b>Une fois le placement de bataille terminé</b>', 'toit plat interdit à la cavalerie', 'ni sur un village à toit plat (au placement', 'un <b>village à toit plat</b> (elle n’y passe pas']
 
 
 def hl_par(el):
@@ -103,7 +101,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (26/10/2026, 23 h 30)', h2))
+S.append(P('Modifications depuis le dernier envoi (26/10/2026, 23 h 55)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
