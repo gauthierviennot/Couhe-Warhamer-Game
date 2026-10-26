@@ -88,6 +88,7 @@ setTimeout(async () => {
   ok(d1 === 1 && d2 === 1, 'les deux paires sont au contact');
   { const q = (v.m.queue || []).filter((x) => x.res); const r0 = q[0]?.res;
     ok(q.length === 2 && r0.kind === 'mutual' && r0.units.length === 2 && r0.units.every((x) => x.path[0] === x.from && x.path[x.path.length - 1] === x.to), 'détail des charges : résultat et trajets conservés pour chaque charge'); }
+  { const q = (v.m.queue || []).filter((x) => x.res); ok(v.m.snap && v.m.snap.pos && q.every((x) => x.res.orient && x.res.orient[x.id] != null && x.res.orient[x.target] != null), 'film des charges : positions d’origine et orientations après chaque charge disponibles'); }
   const even = [c1, c2].find((x) => x.plan.n % 2 === 0), odd = [c1, c2].find((x) => x.plan.n % 2 === 1);
   ok(even && !even.plan.roll && odd && odd.plan.roll, 'pas de dé si nombre pair de tuiles, dé d10 sinon');
   const ka = (x) => (x.id === A1 ? [mv('A1'), mv('B1')] : [mv('A2'), mv('B2')]);

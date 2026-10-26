@@ -1504,7 +1504,7 @@ function landingViewFor(socket) {
             }
             if (L.phase === 'move' && L.m) {
                 const m = L.m;
-                view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length,
+                view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length, snap: m.snap || null,
                     queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.res ? { res: x.res } : {}), ...(x.failed ? { failed: true } : {}), ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit, ...(x.plan.choice.cancel ? { cancel: true, tie: x.plan.choice.tie } : {}), ...(x.plan.choice.bridge ? { bridge: true, tie: x.plan.choice.tie } : {}) } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
                 const cur = m.step === 'charge' ? m.queue[m.qi] : null;
                 const actors = m.step === 'charge' ? (cur ? allBattleUnits().filter((u) => u.id === (cur.mutual && cur.plan?.choice ? cur.plan.choice.unit : cur.id)) : []) : (m.step === 'move' ? eligibleMovers().filter((u) => u.team === m.active) : []);
@@ -2445,6 +2445,7 @@ function doMove(u, tile, orient) {
             const dest = cands[0];
             if (!dest) continue;
             rec.push({ id: t.id, pos: L.b.pos[t.id] ?? null, orient: L.b.orient[t.id] ?? null });
+            if (it?.res) it.res.units.push({ id: t.id, from: unitPos(t.id), to: dest, path: [unitPos(t.id), dest], screen: true });
             if (dest === L.placed[t.id]) delete L.b.pos[t.id]; else L.b.pos[t.id] = dest;
             L.b.orient[t.id] = L.b.orient[p.id];
             battleLog(`🪶 Les tirailleurs ${unitLabel(t)} accompagnent la charge et se placent juste derrière ${unitLabel(p)}.`);
@@ -2478,6 +2479,7 @@ function doMove(u, tile, orient) {
         battleLog(`⚔️ ${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' (pas de contact : portées insuffisantes)'}.`);
         chargeRecord(it, it.plan.contact ? 'mutual' : 'failed', `${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' : pas de contact (portées insuffisantes)'}${it.plan.choice?.bridge ? ' (pont : un d10 a désigné le côté, pas de modificateur de pont)' : it.plan.choice ? ' (décor plus fort d’un côté : il fixe la ligne de front)' : ''}.`, resUnits);
         follow();
+        finishRecord(it);
         advanceMove(u.team);
         return true;
     }
@@ -2514,6 +2516,7 @@ function doMove(u, tile, orient) {
         battleLog(`👣 ${u.line.name} ${u.idx} se déplace${moved ? '' : ' (reste en place)'}.`);
     }
     m.moved[u.id] = true;
+    finishRecord(it);
     advanceMove(u.team);
     return true;
 
@@ -2538,6 +2541,13 @@ function routeOf(u, from, to, charge) {
     return hexLine(from, to, [1e-6, 2e-6, -3e-6]);
 }
 // Résultat d'une charge, conservé dans la file : détail des charges consultable pas à pas par tous.
+// Orientation de chaque unité concernée (et de la cible) après la charge : le film des charges les rejoue.
+function finishRecord(it) {
+    if (!it?.res) return;
+    const L = state.landing, ids = new Set([...it.res.units.map((x) => x.id), it.id, it.target]);
+    it.res.orient = {};
+    for (const id of ids) if (L.b.orient[id] != null) it.res.orient[id] = L.b.orient[id];
+}
 function chargeRecord(it, kind, text, units) { if (it) it.res = { kind, text: String(text).slice(0, 240), units: units.slice(0, 6) }; }
 function advanceMove(justPlayed) {
     const m = state.landing.m;
@@ -4432,6 +4442,7 @@ io.on('connection', (socket) => {
         if (m.step === 'charge' && !testMJ(socket)) return landingFail(ack, 'Une fois les ordres révélés, la charge est obligatoire (seul le MJ, en mode test et correction, peut l’annuler).');
         pushMoveUndo(u, null);
         m.moved[u.id] = true;
+        if (m.step === 'charge') chargeRecord(m.queue[m.qi], 'none', `${unitLabel(u)} ne charge pas (décision du MJ).`, [{ id: u.id, from: unitPos(u.id), to: unitPos(u.id), path: [unitPos(u.id)] }]);
         battleLog(`⏭ ${u.line.name} ${u.idx} ne ${m.step === 'charge' ? 'charge pas (décision du MJ)' : 'se déplace pas'}.`);
         advanceMove(u.team);
         landingOk(ack);

@@ -3583,6 +3583,7 @@
                 for (const [id, o] of Object.entries(LAND.view.b.orders || {})) {
                     const u = byId.get(id);
                     if (!u?.tile) continue;
+                    if (LAND.film && o.type === 'charge') continue; // film des charges : le trajet jaune remplace la flèche d'ordre
                     const a = cen(u.tile);
                     if (o.type === 'tirailleur') {
                         c.setLineDash([R * 0.15, R * 0.12]); c.lineWidth = R * 0.1; c.strokeStyle = '#2e7d32';
@@ -3621,7 +3622,7 @@
                 };
                 if (fp && fp.mode === 'art' && fp.tile && byId.get(fp.id)?.tile) drawArt(byId.get(fp.id).tile, fp.tile, fp.three);
                 // Détail des charges : trajet de la charge choisie (départ cerclé, tuiles numérotées, arrivée), cible entourée.
-                const cwx = LAND.cw?.open && LAND.view.phase === 'move' ? LAND.view.m?.queue?.[LAND.cw.sel] : null;
+                const cwx = LAND.cw?.open && LAND.view.phase === 'move' && LAND.cw.sel >= 0 ? LAND.view.m?.queue?.[LAND.cw.sel] : null;
                 if (cwx) {
                     const tgt = byId.get(cwx.target)?.tile;
                     if (tgt) { const t = cen(tgt); c.lineWidth = R * 0.14; c.strokeStyle = '#c62828'; c.setLineDash([R * 0.2, R * 0.12]); hexPathAt(c, t.x, t.y, R * 0.95); c.stroke(); c.setLineDash([]); }
@@ -3632,7 +3633,7 @@
                         c.strokeStyle = 'rgba(255,214,0,0.95)'; c.lineWidth = R * 0.34; c.lineCap = 'round'; c.lineJoin = 'round';
                         c.beginPath(); pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.stroke();
                         c.strokeStyle = '#c62828'; c.lineWidth = R * 0.12; c.stroke();
-                        pts.forEach((p, j) => { if (!j) { c.lineWidth = R * 0.12; c.strokeStyle = '#1b1b1b'; c.beginPath(); c.arc(p.x, p.y, R * 0.8, 0, Math.PI * 2); c.stroke(); return; }
+                        pts.forEach((p, j) => { if (!j) return; // départ : pas de marque (l'unité y est au début du film)
                             c.fillStyle = '#c62828'; c.beginPath(); c.arc(p.x, p.y - R * 0.62, R * 0.3, 0, Math.PI * 2); c.fill();
                             c.fillStyle = '#fff'; c.font = `700 ${R * 0.36}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(j), p.x, p.y - R * 0.61); });
                     }
@@ -4215,6 +4216,7 @@
         // Capture : les gestes sur une unité sont traités ici ; le reste de la carte (déplacement, zoom, peinture) garde son comportement.
         el.canvas.addEventListener('pointerdown', (e) => {
             if (!landOn() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+            if (LAND.film) return; // film des charges : la carte se déplace et se zoome, les unités ne réagissent pas
             const rect = el.canvas.getBoundingClientRect();
             if (LAND.pick) {
                 e.stopImmediatePropagation(); e.preventDefault();
@@ -5526,6 +5528,8 @@
         window.__landDebug = {
             view: () => LAND.view,
             units: () => LAND.units,
+            openPanel: () => { LAND.open = true; updateLandingUI(); },
+            film: () => (LAND.film ? { f: LAND.film.f, play: LAND.film.play, n: buildFilm().length } : null),
             preview: () => (LAND.preview ? { end: LAND.preview.end, bonusEnd: LAND.preview.bonusEnd, pass: LAND.preview.pass, dep: LAND.preview.dep, extra: LAND.preview.extra, total: LAND.preview.total, section: LAND.preview.section } : null),
             range: (unit) => { const r = computeRange(unit); return { end: r.end, bonusEnd: r.bonusEnd, pass: r.pass, dep: r.dep, extra: r.extra, bonus: r.bonus, total: r.total, section: r.section, sectionKind: r.sectionKind, zone: r.zone }; },
             area: (zoneId, sectionKey) => { const z = (LAND.view.zones || []).find((x) => x.id === zoneId); return z ? [...(zoneAreas(z).get(sectionKey) || [])] : []; },
@@ -5590,12 +5594,13 @@
             const pts = (tiles || []).filter(Boolean).map((k) => { try { return window.__landDebug.tileScreen(k); } catch { return null; } }).filter(Boolean);
             const W = window.innerWidth, H = window.innerHeight, r = el.getBoundingClientRect(), m = 10;
             const corners = [[m, m], [W - r.width - m, m], [m, H - r.height - m], [W - r.width - m, H - r.height - m]];
+            // Les autres fenêtres ouvertes (film des charges, tir, dés) ne doivent pas être recouvertes : coin libre d'abord, puis le plus loin du combat.
+            const others = [...document.querySelectorAll('.floatwin, #diceAnim, .landing-panel')].filter((w) => w !== el && !w.hidden && w.getBoundingClientRect().width > 0).map((w) => w.getBoundingClientRect());
+            const cover = (c0) => others.reduce((t, o) => t + Math.max(0, Math.min(c0[0] + r.width, o.right) - Math.max(c0[0], o.left)) * Math.max(0, Math.min(c0[1] + r.height, o.bottom) - Math.max(c0[1], o.top)), 0);
+            const cx = pts.length ? pts.reduce((t, p) => t + p.x, 0) / pts.length : W / 2, cy = pts.length ? pts.reduce((t, p) => t + p.y, 0) / pts.length : H / 2;
+            const score = (c0) => cover(c0) * 1000 - (pts.length ? Math.hypot(c0[0] + r.width / 2 - cx, c0[1] + r.height / 2 - cy) : 0);
             let best = corners[0];
-            if (pts.length) {
-                const cx = pts.reduce((t, p) => t + p.x, 0) / pts.length, cy = pts.reduce((t, p) => t + p.y, 0) / pts.length;
-                let bd = -1;
-                for (const c0 of corners) { const d = Math.hypot(c0[0] + r.width / 2 - cx, c0[1] + r.height / 2 - cy); if (d > bd) { bd = d; best = c0; } }
-            }
+            for (const c0 of corners) if (score(c0) < score(best)) best = c0;
             el.style.left = `${Math.max(m, best[0])}px`; el.style.top = `${Math.max(m, best[1])}px`;
         }
         // Fenêtres déplaçables (panneau ⚔️, fenêtres de tir, dés, détail des charges) : on les prend par leur barre de titre,
@@ -5674,7 +5679,7 @@
             const facts = [`📏 ${x.dist} hex par le trajet${x.tie ? ` · 🎲 départage ${x.tie}` : ''}`];
             for (const id of x.mutual ? [x.id, x.target] : [x.id]) {
                 const o = b.orders?.[id]; if (!o) continue;
-                const who = x.mutual ? `${unitLbl(U(id) || {})} : ` : '';
+                const who = x.mutual ? `${unitLbl(U(id) || {})} <small>(${String(U(id)?.owner || '').replace(/[<>&]/g, '')})</small> : ` : '';
                 const f = [];
                 f.push(o.seen === false ? `🙈 sans voir${o.why ? ` (${o.why})` : ''} : sauvegarde de la cible +4` : '👁️ cible vue');
                 if (o.rear) f.push('↩️ prise à revers : −2 pour la cible');
@@ -5686,37 +5691,131 @@
             }
             if (x.mutual && x.plan) facts.push(x.plan.none ? 'Aucun trajet entre les deux unités' : `${x.plan.n} tuile(s) entre elles${x.plan.roll ? ` · 🎲 ${x.plan.roll.a}/${x.plan.roll.b}` : ''}${x.plan.choice?.bridge ? ' · pont : pas de modificateur de pont' : ''}`);
             h += facts.map((t) => `<p class="lp-hint" style="margin:2px 0">${t}</p>`).join('');
-            if (x.res) h += `<p style="margin:6px 0 2px"><b>Résultat :</b> ${String(x.res.text).replace(/[<>&]/g, '')}</p>` + x.res.units.map((r) => `<p class="lp-hint" style="margin:0">${unitLbl(U(r.id) || {})} : ${Math.max(0, (r.path || []).length - 1)} tuile(s) parcourue(s)</p>`).join('');
+            if (x.res) h += `<p style="margin:6px 0 2px"><b>Résultat :</b> ${String(x.res.text).replace(/[<>&]/g, '')}</p>` + x.res.units.map((r) => `<p class="lp-hint" style="margin:0">${unitLbl(U(r.id) || {})} <small>(${String(U(r.id)?.owner || '').replace(/[<>&]/g, '')})</small> : ${Math.max(0, (r.path || []).length - 1)} tuile(s) parcourue(s)${r.screen ? ' (tirailleurs qui suivent)' : ''}</p>`).join('');
             return h;
         }
+        // Film des charges : les unités reprennent leur position d'avant les charges, puis le film avance image par image :
+        // une image = un pas d'une tuile (ou les dés d'une charge, ou l'orientation finale). On peut s'arrêter, reculer, avancer à chaque image.
+        const filmSteps = () => (LAND.view.m?.queue || []).map((x, i) => (x.res ? i : -1)).filter((i) => i >= 0);
+        const dirOf = (a, b) => { const [ac, ar] = keyToHex(a), [bc, br] = keyToHex(b); const p = hexCenter(ac, ar), q = hexCenter(bc, br); return ((Math.round(Math.atan2(q.y - p.y, q.x - p.x) / (Math.PI / 3)) % 6) + 6) % 6; };
+        function filmDice(qi) {
+            const q = LAND.view.m?.queue || [];
+            const L = (id) => { const u = LAND.units.find((z) => z.id === id); return u ? `${unitLbl(u)} (${u.owner})` : '?'; };
+            if (qi === -1) {
+                // départage des charges à la même distance (d10)
+                const groups = new Map();
+                for (const x of q) if (x.tie) { if (!groups.has(x.dist)) groups.set(x.dist, []); groups.get(x.dist).push(x); }
+                return [...groups.values()].map((g) => { const best = Math.max(...g.map((x) => x.tie)); return { title: `Charges à égalité (${g[0].dist} hex)`, dice: g.map((x) => ({ label: L(x.id), sides: 10, v: x.tie, ok: x.tie === best })), text: 'Le plus haut charge en premier.' }; });
+            }
+            const x = q[qi];
+            if (!x?.mutual || !x.plan) return [];
+            const out = [];
+            const two = (r, title, text) => out.push({ title, dice: [{ label: L(x.id), sides: 10, v: r.a, ok: r.a > r.b }, { label: L(x.target), sides: 10, v: r.b, ok: r.b > r.a }], text });
+            if (x.plan.roll) two(x.plan.roll, 'Charge mutuelle : qui avance d’une tuile de plus ?', `${L(x.plan.roll.a > x.plan.roll.b ? x.id : x.target)} avance d’une tuile de plus.`);
+            if (x.plan.choice?.tie?.a != null) two(x.plan.choice.tie, x.plan.choice.bridge ? 'Charge mutuelle sur un pont : de quel côté ?' : 'Tuiles protectrices à égalité : de quel côté ?', x.plan.choice.bridge ? 'Pas de modificateur de pont.' : 'Les bonus de terrain s’annulent.');
+            return out;
+        }
+        // Images du film : { pos, ori, qi (charge, -1 = avant), kind: 'start' | 'dice' | 'tile' | 'end', t, T, dice? }
+        function buildFilm() {
+            const v = LAND.view;
+            if (LAND.filmCache?.view === v && LAND.filmCache.n === LAND.units.length) return LAND.filmCache.frames;
+            const snap = v.m?.snap || {}, q = v.m?.queue || [];
+            const pos = new Map(), ori = new Map();
+            for (const u of LAND.units) { pos.set(u.id, snap.pos?.[u.id] ?? u.home ?? u.tile); ori.set(u.id, snap.orient?.[u.id] ?? u.orient); }
+            const frames = [];
+            const push = (o) => frames.push({ pos: new Map(pos), ori: new Map(ori), ...o });
+            const d0 = filmDice(-1);
+            push({ qi: -1, kind: 'start', dice: d0.length ? d0 : null });
+            for (const qi of filmSteps()) {
+                const r = q[qi].res;
+                const dice = filmDice(qi);
+                if (dice.length) push({ qi, kind: 'dice', dice });
+                const main = r.units.filter((x) => !x.screen), scr = r.units.filter((x) => x.screen);
+                const T = Math.max(0, ...main.map((x) => (x.path?.length || 1) - 1));
+                for (let t = 1; t <= T; t++) {
+                    for (const x of main) {
+                        const p = x.path?.length ? x.path : [x.from, x.to];
+                        if (t < p.length) { pos.set(x.id, p[t]); ori.set(x.id, dirOf(p[t - 1], p[t])); }
+                    }
+                    push({ qi, kind: 'tile', t, T });
+                }
+                for (const x of scr) if (x.to) pos.set(x.id, x.to);
+                for (const x of r.units) if (x.to) pos.set(x.id, x.to);
+                for (const [id, o] of Object.entries(r.orient || {})) ori.set(id, o);
+                push({ qi, kind: 'end', T });
+            }
+            LAND.filmCache = { view: v, n: LAND.units.length, frames };
+            return frames;
+        }
+        function applyFilm() {
+            if (!LAND.film) return;
+            const fr = buildFilm()[LAND.film.f];
+            if (!fr) return;
+            for (const u of LAND.units) { if (fr.pos.has(u.id)) u.tile = fr.pos.get(u.id); if (fr.ori.has(u.id)) u.orient = fr.ori.get(u.id); }
+        }
+        function filmGo(f, withDice) {
+            const F = LAND.film; if (!F) return 0;
+            const frames = buildFilm();
+            f = Math.max(0, Math.min(frames.length - 1, f));
+            F.f = f;
+            LAND.moveAnims = [];
+            LAND.units = buildUnits(LAND.view); applyFilm();
+            const fr = frames[f];
+            let wait = 0;
+            if (withDice && fr.dice) { fr.dice.forEach((d, k) => setTimeout(() => { if (LAND.film === F) showDiceAnim({ ...d, id: 'film' + Date.now() + k }); }, k * 2600)); wait = fr.dice.length * 2600; }
+            LAND.cw.sel = fr.qi;
+            renderChargeWin(); requestDraw();
+            return wait;
+        }
+        function filmPlay(on) {
+            const F = LAND.film; if (!F) return;
+            clearTimeout(F.timer); F.play = on;
+            if (!on) { renderChargeWin(); return; }
+            const last = buildFilm().length - 1;
+            const step = () => {
+                if (LAND.film !== F || !F.play) return;
+                if (F.f >= last) { F.play = false; renderChargeWin(); return; }
+                const wait = filmGo(F.f + 1, true);
+                const kind = buildFilm()[F.f].kind;
+                F.timer = setTimeout(step, Math.max(wait, kind === 'end' ? 1100 : 480));
+            };
+            if (F.f >= last) { const w = filmGo(0, true); F.timer = setTimeout(step, Math.max(w, 900)); } else step();
+            renderChargeWin();
+        }
+        function filmStop() { if (LAND.film) clearTimeout(LAND.film.timer); LAND.film = null; LAND.moveAnims = []; LAND.units = buildUnits(LAND.view); requestDraw(); }
         function renderChargeWin() {
             const v = LAND.view, q = v.m?.queue || [];
-            if (!LAND.cw?.open || v.phase !== 'move' || !q.length) return hideFloatWin('chargeWin');
-            const i = Math.max(0, Math.min(q.length - 1, LAND.cw.sel || 0)); LAND.cw.sel = i;
-            const x = q[i];
-            let h = `<div class="bat-row" style="justify-content:space-between"><button class="lp-seg" data-land="cwstep" data-d="-1" ${i ? '' : 'disabled'}>◀ Précédente</button><button class="lp-seg" data-land="cwplay" ${x.res ? '' : 'disabled'}>▶ Revoir</button><button class="lp-seg" data-land="cwstep" data-d="1" ${i < q.length - 1 ? '' : 'disabled'}>Suivante ▶</button></div>`;
-            h += chargeDetailHtml(x, i, q);
-            h += '<div class="bat-log" style="max-height:24vh;margin-top:6px">' + q.map((y, j) => { const u = LAND.units.find((z) => z.id === y.id), t = LAND.units.find((z) => z.id === y.target); return `<div class="bat-row" data-land="cwgo" data-i="${j}" style="cursor:pointer;${j === i ? 'font-weight:700;background:#fff3c4' : ''}">${y.res ? '✔' : (j === v.m.qi && v.m.step === 'charge' ? '▶' : '•')} ${j + 1}. ${u ? unitLbl(u) : '?'} ${y.mutual ? '⇄' : '➜'} ${t ? unitLbl(t) : '?'}</div>`; }).join('') + '</div>';
-            if (q.some((y) => y.res)) h += '<div class="lp-actions"><button class="lp-seg" data-land="cwall">▶▶ Revoir toutes les charges jouées</button></div>';
-            const tiles = [x.id, x.target].map((id) => LAND.units.find((u) => u.id === id)?.tile).filter(Boolean);
-            floatWin('chargeWin', '📋 Détail des charges', h, { key: 'cw' + LAND.cw.n, tiles, onClose: () => { LAND.cw.open = false; requestDraw(); } });
-        }
-        function replayCharge(i, start) {
-            const x = LAND.view.m?.queue?.[i];
-            if (!x?.res) return 0;
-            const t0 = start ?? Date.now();
-            LAND.moveAnims = LAND.moveAnims.filter((a) => !x.res.units.some((r) => r.id === a.id));
-            let longest = 1;
-            for (const r of x.res.units) { const path = r.path?.length ? r.path : [r.from, r.to]; longest = Math.max(longest, path.length); LAND.moveAnims.push({ id: r.id, path, start: t0 }); }
-            tickMoveAnims();
-            return longest * ANIM_STEP + 300;
-        }
-        function replayAllCharges() {
-            const q = LAND.view.m?.queue || [];
-            // Chaque charge jouée est rejouée dans l'ordre ; une unité attend sur sa tuile de départ jusqu'à sa charge.
-            let t = Date.now();
-            q.forEach((x, i) => { if (x.res) t += replayCharge(i, t); });
-            LAND.cw.sel = q.findIndex((x) => x.res); renderChargeWin(); requestDraw();
+            if (!LAND.cw?.open || v.phase !== 'move' || !q.length) { if (LAND.film) filmStop(); return hideFloatWin('chargeWin'); }
+            const frames = buildFilm(), last = frames.length - 1, F = LAND.film, f = F ? F.f : last, fr = frames[f];
+            const steps = filmSteps();
+            const startOf = (qi) => frames.findIndex((x) => x.qi === qi);
+            const k = steps.indexOf(fr.qi);
+            const prevCharge = fr.kind === 'start' ? 0 : (f > startOf(fr.qi) ? startOf(fr.qi) : (k > 0 ? startOf(steps[k - 1]) : 0));
+            const nextCharge = k + 1 < steps.length ? startOf(steps[k + 1]) : last;
+            const dis = (c) => (c ? 'disabled' : '');
+            let h = `<div class="bat-row" style="justify-content:center;gap:4px;flex-wrap:wrap">`
+                + `<button class="lp-seg" data-land="film" data-go="0" ${dis(f === 0)} title="Positions d’origine, avant les charges">⏮</button>`
+                + `<button class="lp-seg" data-land="film" data-go="${prevCharge}" ${dis(f === 0)} title="Début de la charge (ou charge précédente)">⏪</button>`
+                + `<button class="lp-seg" data-land="film" data-go="${f - 1}" ${dis(f === 0)} title="Image précédente (une tuile en arrière)">◀ 1</button>`
+                + `<button class="lp-seg on" data-land="filmplay" title="Lecture continue">${F?.play ? '⏸' : '▶'}</button>`
+                + `<button class="lp-seg" data-land="film" data-go="${f + 1}" data-dice="1" ${dis(f >= last)} title="Image suivante (une tuile en avant)">1 ▶</button>`
+                + `<button class="lp-seg" data-land="film" data-go="${nextCharge}" data-dice="1" ${dis(f >= last)} title="Charge suivante">⏩</button>`
+                + `<button class="lp-seg" data-land="film" data-go="${last}" ${dis(f >= last)} title="Après toutes les charges">⏭</button></div>`;
+            const L = (id) => { const u = LAND.units.find((z) => z.id === id); return u ? `${unitLbl(u)} (${String(u.owner).replace(/[<>&]/g, '')})` : '?'; };
+            const what = fr.kind === 'start' ? 'positions d’origine, avant les charges'
+                : `charge ${k + 1}/${steps.length} (${L(q[fr.qi].id)} ${q[fr.qi].mutual ? '⇄' : '➜'} ${L(q[fr.qi].target)}) — ${fr.kind === 'dice' ? '🎲 jet de dés' : fr.kind === 'tile' ? `tuile ${fr.t} / ${fr.T}` : 'arrivée et orientation'}`;
+            h += `<p class="lp-hint" style="text-align:center;margin:2px 0"><b>Image ${f} / ${last}</b> — ${what}</p>`;
+            if (fr.dice) h += `<p class="lp-hint" style="text-align:center">🎲 ${fr.dice.map((d) => `${d.title} : ${d.dice.map((x) => `${x.label} ${x.v}${x.ok ? ' ✔' : ''}`).join(' · ')}`).join(' — ')} <button class="lp-seg" data-land="filmdice">Revoir les dés</button></p>`;
+            if (fr.kind === 'start') h += `<p style="margin:4px 0">🎬 Les unités sont à leur position d’origine. « 1 ▶ » avance d’une tuile, « ▶ » joue le film en continu.</p>`;
+            else h += chargeDetailHtml(q[fr.qi], fr.qi, q);
+            h += '<div class="bat-log" style="max-height:20vh;margin-top:6px">' + q.map((y, j) => {
+                const kk = steps.indexOf(j), cur = fr.qi === j;
+                return `<div class="bat-row" ${kk >= 0 ? `data-land="film" data-go="${startOf(j)}" data-dice="1" style="cursor:pointer;${cur ? 'font-weight:700;background:#fff3c4' : ''}"` : 'style="opacity:.5"'}>${kk >= 0 ? (kk < k || (kk === k && fr.kind === 'end') ? '✔' : (cur ? '▶' : '○')) : '•'} ${j + 1}. ${L(y.id)} ${y.mutual ? '⇄' : '➜'} ${L(y.target)}${kk < 0 ? ' (pas encore jouée)' : ''}</div>`;
+            }).join('') + '</div>';
+            h += '<p class="lp-hint" style="margin-top:4px">Sur la carte : trajet de la charge en jaune, tuiles numérotées dans l’ordre du déplacement, cible entourée de rouge. Fermer la fenêtre rend la carte réelle.</p>';
+            const x = fr.qi >= 0 ? q[fr.qi] : null;
+            const tiles = x ? [x.id, x.target].map((id) => LAND.units.find((u) => u.id === id)?.tile).filter(Boolean) : [];
+            floatWin('chargeWin', '🎬 Film des charges', h, { key: 'cw' + LAND.cw.n, tiles, onClose: () => { LAND.cw.open = false; filmStop(); } });
         }
         function hideFloatWin(id) { const w = document.getElementById(id); if (w) w.hidden = true; }
         function showDiceAnim(a) {
@@ -5794,7 +5893,7 @@
         function tickMoveAnims() { const active = applyMoveAnims(); requestDraw(); if (active) setTimeout(tickMoveAnims, 60); }
         function startMoveAnims(prevPos, prevPhase) {
             const v = LAND.view;
-            if (!prevPos || v.phase !== 'move' || !['orders', 'move'].includes(prevPhase)) return;
+            if (!prevPos || LAND.film || v.phase !== 'move' || !['orders', 'move'].includes(prevPhase)) return;
             const changed = LAND.units.filter((u) => u.tile && prevPos.get(u.id) && prevPos.get(u.id) !== u.tile);
             if (!changed.length) return;
             const q = v.m?.queue || [];
@@ -5822,6 +5921,7 @@
             syncTestAs(LAND.view);
             if (LAND.simOn && !simAvail()) { LAND.simOn = false; SIM_LOCK = false; const bn = document.getElementById('simBanner'); if (bn) bn.hidden = true; }
             LAND.units = buildUnits(LAND.view);
+            applyFilm();
             applyMoveAnims();
             if (LAND.preview && (() => { const pu = LAND.units.find((u) => u.id === LAND.preview.unit.id); return (pu?.home ?? pu?.tile) !== LAND.preview.start; })()) { LAND.preview = null; hideRangeInfo(); }
 
@@ -5861,11 +5961,10 @@
             else if (k === 'ffire' && state.isAdmin) adminNext();
             else if (k === 'faim') aimDialog(b.dataset.u);
             else if (k === 'fskip') landEmit('fire-skip', { unit: b.dataset.u });
-            else if (k === 'cwopen') { const q = LAND.view.m?.queue || []; const done = q.map((x, i) => (x.res ? i : -1)).filter((i) => i >= 0); LAND.cw = { open: true, sel: done.length ? done[done.length - 1] : 0, n: (LAND.cw?.n || 0) + 1 }; renderChargeWin(); requestDraw(); }
-            else if (k === 'cwgo') { LAND.cw.sel = Number(b.dataset.i); renderChargeWin(); requestDraw(); }
-            else if (k === 'cwstep') { const q = LAND.view.m?.queue || []; LAND.cw.sel = Math.max(0, Math.min(q.length - 1, LAND.cw.sel + Number(b.dataset.d))); renderChargeWin(); requestDraw(); }
-            else if (k === 'cwplay') replayCharge(LAND.cw.sel);
-            else if (k === 'cwall') replayAllCharges();
+            else if (k === 'cwopen') { LAND.cw = { open: true, sel: -1, n: (LAND.cw?.n || 0) + 1 }; LAND.film = { f: 0, play: false }; filmGo(0, true); } // le film démarre aux positions d'origine
+            else if (k === 'film' && LAND.film) { filmPlay(false); filmGo(Number(b.dataset.go), b.dataset.dice === '1'); }
+            else if (k === 'filmdice' && LAND.film) filmGo(LAND.film.f, true);
+            else if (k === 'filmplay' && LAND.film) filmPlay(!LAND.film.play);
             else if (k === 'fcancel') landEmit('fire-cancel', {});
             else if (k === 'fmod' && state.isAdmin) landEmit('fire-mod', { k: b.dataset.k, on: b.checked });
             else if (k === 'fadj' && state.isAdmin) landEmit('fire-mod', { adj: (LAND.view.f?.pending?.adj || 0) + Number(b.dataset.d) });

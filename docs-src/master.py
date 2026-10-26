@@ -56,11 +56,9 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>§ 1 — Qui joue quoi</b> : le mode test du MJ vaut pour toutes les phases ; le MJ choisit le joueur qu’il incarne (ou « MJ arbitre ») et un bandeau en haut de la carte indique le joueur joué.',
-    '<b>§ 5</b> : l’unité qui reçoit mvt +3 / charge +2 se désigne en touchant son chevron ; flèche rouge de l’unité qui charge vers sa cible.',
-    '<b>§ 7</b> : bouton « Détail des charges » pour suivre toutes les charges pas à pas (trajet sur la carte, « Revoir »).',
+    '<b>§ 7 — Film des charges</b> : retour aux positions d’origine, charges rejouées image par image (une image = un pas d’une tuile, une image pour les dés, une pour l’arrivée), avec arrêt possible sur chaque image.',
 ]
-NEEDLES = ['Le mode test vaut pour toutes les phases', 'Détail des charges</b> : pendant', 'en <b>touchant son chevron</b>', 'une <b>flèche rouge</b> va de']
+NEEDLES = ['<b>Film des charges</b> : pendant']
 
 
 def hl_par(el):
@@ -101,7 +99,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (26/10/2026, 20 h 35)', h2))
+S.append(P('Modifications depuis le dernier envoi (26/10/2026, 22 h 05)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
