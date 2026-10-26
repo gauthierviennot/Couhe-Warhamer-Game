@@ -269,6 +269,8 @@
         .bat-log { font-size: .74rem; color: #444; margin-top: 6px; max-height: 90px; overflow: auto; border-top: 1px solid #ddd; padding-top: 4px; }
         .bat-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; font-size: .8rem; }
         .bat-row .lp-grow { flex: 1; min-width: 0; }
+        .noeye { position: relative; display: inline-block; }
+        .noeye > i { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(1.15); font-style: normal; }
         #mapConfirm { position: fixed; z-index: 63; display: flex; gap: 6px; align-items: center; pointer-events: auto; }
         #mapConfirm button { border: 2px solid #6a1b1b; border-radius: 10px; background: #fff; color: #6a1b1b; font: 700 14px/1 system-ui, sans-serif; padding: 8px 10px; box-shadow: 0 2px 8px #0006; cursor: pointer; white-space: nowrap; }
         #mapConfirm button.ok { background: #2e7d32; border-color: #1b5e20; color: #fff; }
@@ -3097,7 +3099,7 @@
             const out = [];
             for (const l of v.lines || []) {
                 const genId = v.gen?.[l.owner] ?? null;
-                const genTile = genId ? placed[genId] ?? null : null;
+                const genTile = genId ? (v.b?.pos?.[genId] ?? placed[genId] ?? null) : null;
                 for (let i = 1; i <= l.qty; i++) {
                     const id = `${l.owner}|${l.uid}#${i}`;
                     if (v.b?.dead?.[id]) continue; // unité détruite : elle quitte le plateau
@@ -3105,7 +3107,7 @@
                     const home = tile;
                     const isGen = genId === id;
                     // Chevron de général : proposé aux unités posées à 6 hexagones ou moins de l'unité qui porte le général.
-                    const near = Boolean(tile && genTile && !isGen && hexDist(tile, genTile) <= 6);
+                    const near = Boolean(genTile && (v.b?.pos?.[id] ?? tile) && hexDist(v.b?.pos?.[id] ?? tile, genTile) <= (l.army === 'empire' ? 9 : 6));
                     const simTile = v.sim?.[id] ?? null;
                     if (LAND.simOn) {
                         // Carte virtuelle : seules les unités de mon équipe (ou toutes pour un MJ sans équipe), à leur position simulée.
@@ -3115,7 +3117,7 @@
                     if (v.b?.pos?.[id]) tile = v.b.pos[id];
                     const bpend = Boolean(LAND.pend && LAND.pend.unit === id);
                     if (bpend) tile = LAND.pend.tile;
-                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null, caps: l.caps || null,
+                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null, caps: l.caps || null, kin: l.kin || '',
                         multi: l.figs / Math.max(1, l.qty) > 1, gen: isGen, near, chev: v.chev?.[l.owner] === id, alive: v.b?.alive?.[id] ?? null });
                 }
             }
@@ -3333,7 +3335,7 @@
                 const tile = state.gridData[key];
                 const terrain = tile?.terrain ?? 'plain';
                 if (terrain === 'mountain') return false;
-                if (terrain === 'water') return unit.army === 'saurus' || tile?.object === 'bridge';
+                if (terrain === 'water') return swimBA(unit) || tile?.object === 'bridge';
                 return true;
             };
             const dist = new Map([[origin, 0]]);
@@ -3361,9 +3363,9 @@
                 if (d <= reach) end.push(key);
                 else if (area && area.has(key)) bonusEnd.push(key);
             }
-            // Général (porté par l'unité ou chevron actif) : jusqu'à 2 tuiles plus loin que la zone d'arrivée normale (bonus de section compris),
-            // sans jamais franchir les frontières ni les tuiles bloquées déjà définies.
-            const genExtra = unit.gen || unit.chev ? 2 : 0;
+            // Pouvoir du général au premier placement (placement de bataille et sa simulation) : l'unité qu'il désigne (chevron), la sienne comprise,
+            // va jusqu'à 3 tuiles plus loin que la zone d'arrivée normale (bonus de section compris), sans franchir les frontières. Rien au dépôt.
+            const genExtra = (batMode() || LAND.simOn) && unit.chev ? 3 : 0; // premier placement, en jeu comme en simulation
             const genEnd = [];
             if (genExtra) {
                 const sources = end.length || bonusEnd.length ? [...end, ...bonusEnd] : [origin];
@@ -3585,7 +3587,14 @@
                 }
                 // Tir en préparation : trait épais du tireur vers sa cible, viseur sur la cible.
                 const fp = LAND.view.phase === 'fire' ? LAND.view.f?.pending : null;
-                if (fp && byId.get(fp.id)?.tile && byId.get(fp.tid)?.tile) {
+                const drawArt = (from, pt, three) => { // trait vers le point visé, tuiles 1 · 2 · 3
+                    const a = cen(from), t = cen(pt);
+                    c.strokeStyle = '#c62828'; c.lineWidth = R * 0.14; c.setLineDash([R * 0.3, R * 0.2]); c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(t.x, t.y); c.stroke(); c.setLineDash([]);
+                    (three || []).forEach((k, i) => { if (!k) return; const q = cen(k); c.fillStyle = 'rgba(247,215,154,0.75)'; hexPathAt(c, q.x, q.y, R * 0.9); c.fill(); c.lineWidth = R * 0.1; c.strokeStyle = i === 2 ? '#c62828' : '#8a4b00'; c.stroke();
+                        c.fillStyle = '#5d3200'; c.font = `700 ${R * 0.8}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(i + 1), q.x, q.y + R * 0.55); });
+                };
+                if (fp && fp.mode === 'art' && fp.tile && byId.get(fp.id)?.tile) drawArt(byId.get(fp.id).tile, fp.tile, fp.three);
+                if (fp && fp.mode !== 'art' && byId.get(fp.id)?.tile && byId.get(fp.tid)?.tile) {
                     const a = cen(byId.get(fp.id).tile), t = cen(byId.get(fp.tid).tile);
                     c.strokeStyle = '#c62828'; c.lineWidth = R * 0.2; c.lineCap = 'round';
                     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(t.x, t.y); c.stroke();
@@ -3600,7 +3609,23 @@
                     for (const k of LAND.reach.tiles) { if (k === ru?.tile) continue; const q = cen(k); hexPathAt(c, q.x, q.y, R * 0.86); c.stroke(); }
                     if (ru?.tile) { const q = cen(ru.tile); c.lineWidth = R * 0.14; c.strokeStyle = '#111'; hexPathAt(c, q.x, q.y, R * 0.96); c.stroke(); }
                 }
-                if (LAND.pick?.type === 'fire') {
+                if (LAND.pick?.type === 'gen') {
+                    const g = byId.get(LAND.pick.gen);
+                    if (g?.tile) {
+                        c.lineWidth = R * 0.14; c.strokeStyle = '#c79100';
+                        for (const x of LAND.units) if (ciEq(x.owner, state.username) && x.tile && hexDist(x.tile, g.tile) <= genR(g)) { const q = cen(x.tile); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
+                    }
+                }
+                if (LAND.pick?.type === 'fire' && LAND.pick.art) {
+                    const pu = byId.get(LAND.pick.unit);
+                    if (pu?.tile) {
+                        // portée de l'artillerie : tuiles à 10 hexagones au plus (contour léger), puis le point choisi et ses 3 tuiles
+                        c.lineWidth = R * 0.06; c.strokeStyle = 'rgba(198,40,40,0.45)';
+                        const [pc, pr] = pu.tile.split(',').map(Number);
+                        for (let rr = pr - 10; rr <= pr + 10; rr++) for (let cc = pc - 11; cc <= pc + 11; cc++) { const k = `${cc},${rr}`; if (cc < 0 || rr < 0 || cc >= state.cols || rr >= state.rows) continue; if (hexDist(pu.tile, k) === 10) { const q = cen(k); hexPathAt(c, q.x, q.y, R * 0.92); c.stroke(); } }
+                        if (LAND.pick.point) drawArt(pu.tile, LAND.pick.point, LAND.pick.three);
+                    }
+                } else if (LAND.pick?.type === 'fire') {
                     const pu = byId.get(LAND.pick.unit);
                     if (pu?.tile) {
                         for (const t of LAND.pick.targets || []) {
@@ -3616,7 +3641,7 @@
                     const pu = byId.get(LAND.pick.unit);
                     if (pu?.tile) {
                         c.lineWidth = R * 0.14; c.strokeStyle = '#d32f2f';
-                        for (const t of new Set(LAND.units.filter((x) => x.team && x.team !== pu.team && x.tile && hexDist(pu.tile, x.tile) <= LAND.pick.max).map((x) => x.tile))) { const q = cen(t); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
+                        for (const t of new Set(LAND.units.filter((x) => x.tile && (LAND.pick.targets || []).includes(x.id)).map((x) => x.tile))) { const q = cen(t); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
                         const tg = LAND.pick.target ? byId.get(LAND.pick.target) : null;
                         if (tg?.tile) { const a = cen(pu.tile), q = cen(tg.tile); c.lineWidth = R * 0.18; c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(q.x, q.y); c.stroke(); c.lineWidth = R * 0.22; c.beginPath(); c.arc(q.x, q.y, R * 0.9, 0, Math.PI * 2); c.stroke(); }
                     }
@@ -3799,13 +3824,21 @@
                         c.lineWidth = R * 0.04; c.strokeStyle = TEAM_COL[u.team] || '#555'; c.stroke();
                         c.font = `${br * 1.25}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = '#fff';
                         c.fillText(o && o.type === 'tir' && o.range !== 'art' ? (o.range === 'court' ? '🏹' : '🎯') : ico, bx, by + br * 0.05);
+                        if (o && o.air !== undefined) { // unité volante : en vol / au sol, sous la pastille
+                            c.font = `${br * 0.95}px system-ui, sans-serif`; c.fillText(o.air === false ? '🦶' : '✈️', bx, by + br * 1.55);
+                            c.font = `${br * 1.25}px system-ui, sans-serif`;
+                        }
                         if (o?.type === 'charge') {
                             // à côté du symbole de charge : 🔙 prise à revers, 👁 / 🚫 cible visible ou non
-                            const extra = [o.rear ? '🔙' : null, o.seen === false ? '🚫' : (o.seen ? '👁' : null)].filter(Boolean);
+                            // puis les marqueurs de terrain de la cible (sauvegarde au corps à corps) et la charge de cavalerie ×2 (🐎)
+                            const marks = { hill: '⛰️', forest: '🌲', build: '🏰', bridge: '🌉', vs: '🪽' };
+                            const extra = [o.rear ? '🔙' : null, o.seen === false ? 'noeye' : (o.seen ? '👁\uFE0F' : null), ...(o.save || []).map((k) => marks[k]).filter(Boolean), o.cav === true ? '🐎' : null].filter(Boolean);
                             extra.forEach((e2, i) => {
                                 const ex = bx + br * 1.75 * (i + 1), er = br * 0.8;
                                 c.beginPath(); c.arc(ex, by, er, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill(); c.lineWidth = R * 0.03; c.strokeStyle = '#555'; c.stroke();
-                                c.font = `${er * 1.2}px system-ui, sans-serif`; c.fillText(e2, ex, by + er * 0.05);
+                                c.font = `${er * 1.2}px system-ui, sans-serif`;
+                                if (e2 === 'noeye') { c.fillText('👁\uFE0F', ex, by + er * 0.05); c.font = `${er * 1.45}px system-ui, sans-serif`; c.fillText('🚫', ex, by + er * 0.05); } // œil barré : 👁 dessous, 🚫 par-dessus
+                                else c.fillText(e2, ex, by + er * 0.05);
                             });
                         }
                         c.restore();
@@ -3841,7 +3874,7 @@
                             flag = { x: sp.x + (ox + w / 2 - chipH * 0.68) * VW.scale, y: sp.y + (oy - chipH / 2) * VW.scale, w: chipH * 0.68 * VW.scale, h: chipH * VW.scale };
                         }
                     }
-                    // Chevron de général : gris = disponible, or = actif (2 tuiles de placement supplémentaires).
+                    // Chevron de général : gris = disponible, or = unité désignée (3 tuiles au placement de bataille, puis pouvoir mvt +3 ou charge +2).
                     let chev = null;
                     if (hasChev) {
                         const cxv = ox + w / 2 - wFlag - chipH * 0.35;
@@ -4120,6 +4153,7 @@
             if (LAND.pick) {
                 e.stopImmediatePropagation(); e.preventDefault();
                 if (LAND.pick.type === 'charge') return handleChargePick(tokenAt(e.clientX - rect.left, e.clientY - rect.top)?.unit, tileKeyAt(e.clientX, e.clientY));
+                if (LAND.pick.type === 'gen') return handleGenPick(tokenAt(e.clientX - rect.left, e.clientY - rect.top)?.unit);
                 if (LAND.pick.type === 'fire') return handleFirePick(tokenAt(e.clientX - rect.left, e.clientY - rect.top)?.unit, tileKeyAt(e.clientX, e.clientY));
                 handlePick(tileKeyAt(e.clientX, e.clientY)); return;
             }
@@ -4186,7 +4220,7 @@
                 LAND.genMode = false;
                 renderUnitBar();
                 if (!unit.multi) { toast('Le général ne peut rejoindre qu’une unité de plusieurs figurines.', true); return; }
-                landEmit('landing-general', { unit: unit.id }).then((r) => { if (r.success) toast(`Général affecté à ${shortName(unit.name, 22)} ${unit.idx} : 2 tuiles de placement supplémentaires.`); });
+                landEmit('landing-general', { unit: unit.id }).then((r) => { if (r.success) toast(`Général affecté à ${shortName(unit.name, 22)} ${unit.idx}.`); });
                 return;
             }
             const cv = hit.chev;
@@ -4202,8 +4236,15 @@
                     }
                     e.stopImmediatePropagation();
                     e.preventDefault();
+                    if (LAND.view.phase === 'orders') {
+                        // Pose des ordres : toucher le chevron d'une unité la désigne pour le pouvoir mvt +3 / charge +2 du général.
+                        const go = LAND.view.b?.gorders?.[myKey()];
+                        if (go !== 'mvt' && go !== 'charge') return toast('Choisissez d’abord « mvt +3 » ou « charge +2 » dans l’ordre du général (panneau ⚔️).', true);
+                        landEmit('battle-gorder', { order: go, unit: unit.id }).then((r) => { if (r.success) toast(`${go === 'mvt' ? 'mvt +3' : 'charge +2'} pour ${unitLbl(unit)}.`); });
+                        return;
+                    }
                     const next = !unit.chev;
-                    landEmit('landing-chevron', { unit: next ? unit.id : null }).then((r) => { if (r.success) toast(next ? 'Chevron actif : cette unité reçoit 2 tuiles de placement supplémentaires.' : 'Chevron retiré.'); });
+                    landEmit('landing-chevron', { unit: next ? unit.id : null }).then((r) => { if (r.success) toast(next ? 'Chevron actif : au premier placement (simulation comme jeu), cette unité pourra aller 3 tuiles plus loin.' : 'Chevron retiré.'); });
                     return;
                 }
             }
@@ -4480,12 +4521,19 @@
             void home;
         }
 
+        // Bonus d'armée (BA) : seulement les unités dont le nom porte « BA » entre parenthèses ; Saurus BA = se tiennent sur l'eau.
+        function hasBA(unit) { return (String(unit?.name || '').match(/\(([^)]*)\)/g) || []).some((g) => g.slice(1, -1).split(',').some((t) => t.trim().toLowerCase() === 'ba')); }
+        function swimBA(unit) { return unit?.army === 'saurus' && hasBA(unit); }
+        // Portée du général : 6 hexagones, 9 pour l'Empire (général d'exception).
+        // Le général n'a plus de pouvoirs quand son unité est détruite.
+        function genAliveMine() { const g = LAND.view?.gen?.[myKey()]; return Boolean(g && !LAND.view?.b?.dead?.[g]); }
+        function genR(genUnit) { return genUnit?.army === 'empire' ? 9 : 6; }
         function pickOk(key, unit) {
             const t = state.gridData[key];
             if (t?.removed) return false;
             const terrain = t?.terrain ?? 'plain';
             if (terrain === 'mountain') return false;
-            if (terrain === 'water') return unit.army === 'saurus' || t?.object === 'bridge';
+            if (terrain === 'water') return swimBA(unit) || t?.object === 'bridge';
             return true;
         }
 
@@ -4537,17 +4585,40 @@
             box.style.left = `${left}px`; box.style.top = `${top}px`;
         }
 
+        // Pouvoir du général mvt +3 / charge +2 : le joueur touche, sur la carte, l'unité qui en bénéficie (à 6 hexagones ou moins du général).
+        function startGenPick(order) {
+            const key = myKey();
+            const g = LAND.units.find((x) => x.id === LAND.view.gen?.[key]);
+            if (!g?.tile) return toast('Votre général n’est pas sur le plateau.', true);
+            if (!LAND.units.some((x) => ciEq(x.owner, state.username) && x.tile && hexDist(x.tile, g.tile) <= genR(g))) return toast(`Aucune de vos unités n’est à ${genR(g)} hexagones ou moins du général.`, true);
+            LAND.pick = { type: 'gen', order, gen: g.id };
+            LAND.open = false; updateLandingUI(); updateBatUI(); requestDraw();
+        }
+        function handleGenPick(hitUnit) {
+            const pk = LAND.pick;
+            const g = LAND.units.find((x) => x.id === pk.gen);
+            if (!hitUnit || !ciEq(hitUnit.owner, state.username)) return toast('Touchez une de vos unités (cercles dorés), celle du général comprise.', true);
+            if (!g?.tile || !hitUnit.tile || hexDist(hitUnit.tile, g.tile) > genR(g)) return toast(`Cette unité est à plus de ${genR(g)} hexagones du général.`, true);
+            LAND.pick = null; updateBatUI(); requestDraw();
+            landEmit('battle-gorder', { order: pk.order, unit: hitUnit.id }).then((r) => { if (r.success) { toast(`${pk.order === 'mvt' ? 'mvt +3' : 'charge +2'} pour ${unitLbl(hitUnit)}.`); LAND.open = true; updateLandingUI(); } });
+        }
+
         // Charge : le joueur touche l'unité adverse sur la carte, puis le bouton « Charger » posé à côté d'elle.
         function startChargePick(u) {
-            const gord = LAND.view.b?.gorders?.[myKey()];
-            const max = gord === 'charge' ? 7 : 5;
-            if (!LAND.units.some((e) => e.team && e.team !== u.team && e.tile && hexDist(u.tile, e.tile) <= max)) return toast(`Aucune unité adverse à ${max} hexagones ou moins.`, true);
-            LAND.pick = { unit: u.id, type: 'charge', max };
-            updateBatUI();
-            requestDraw();
+            const gord = genAliveMine() ? LAND.view.b?.gorders?.[myKey()] : null;
+            const max = gord === 'charge' && LAND.view.chev?.[myKey()] === u.id ? 7 : 5; // charge +2 : seulement l'unité désignée par le général
+            // Cibles possibles calculées par le serveur : distance de charge par un chemin autorisé (contournement, sinon traversée sans voir).
+            landEmit('battle-charge-targets', { unit: u.id }).then((r) => {
+                if (!r.success) return;
+                if (!r.targets.length) return toast(`Aucune unité adverse à portée de charge (${r.max} tuiles au plus par un chemin autorisé).`, true);
+                LAND.pick = { unit: u.id, type: 'charge', max: r.max, targets: r.targets };
+                updateBatUI();
+                requestDraw();
+            });
         }
         // Pictogrammes d'une charge : 🔙 cible prise à revers ; 👁 cible visible, 🚫 cible non visible (avec l'obstacle).
-        const chargePicto = (o) => `${o.rear ? ' · 🔙 revers' : ''}${o.seen === false ? ` · 🚫 non visible${o.why ? ` (${o.why})` : ''}` : (o.seen ? ' · 👁 visible' : '')}`;
+        const SAVE_MARK = { hill: ['⛰️', 'colline +1'], forest: ['🌲', 'forêt +2'], build: ['🏰', 'construction +2'], bridge: ['🌉', 'sortie de pont +2'], vs: ['🪽', 'vol stationnaire +2'] };
+        const chargePicto = (o, html = true) => `${o.failed ? ' · ❌ échouée' : ''}${(o.save || []).length ? ` · sauvegarde de la cible : ${o.save.map((k) => SAVE_MARK[k] ? `${SAVE_MARK[k][0]} ${SAVE_MARK[k][1]}` : k).join(', ')}` : ''}${o.cav === true ? ' · 🐎 charge de cavalerie att ×2' : (o.cav === false ? ' · 🐎 charge de cavalerie sans ×2 (forêt ou construction)' : '')}${o.second ? ' · 🛡️ deuxième rideau (ne combat pas)' : ''}${o.rear ? ' · 🔙 revers' : ''}${o.seen === false ? ` · ${html ? '<span class="noeye">👁<i>🚫</i></span>' : '👁🚫'} non visible${o.why ? ` (${o.why})` : ''}` : (o.seen ? ' · 👁 visible' : '')}`; // sans voir : œil barré
         function handleChargePick(hitUnit, key) {
             const pk = LAND.pick;
             const u = LAND.units.find((x) => x.id === pk?.unit);
@@ -4555,27 +4626,37 @@
             const foe = (x) => x && x.team && x.team !== u.team && x.tile;
             const cands = foe(hitUnit) ? [hitUnit] : LAND.units.filter((x) => foe(x) && x.tile === key);
             if (!cands.length) return toast('Touchez une unité adverse (cercles rouges).', true);
-            const inRange = cands.filter((x) => hexDist(u.tile, x.tile) <= pk.max);
-            if (!inRange.length) return toast(`Cible trop loin : ${pk.max} hexagones au plus.`, true);
-            // Cible retenue (l'étiquette touchée, sinon la première unité adverse de la tuile) : bouton « Charger » juste à côté d'elle.
+            const inRange = cands.filter((x) => (pk.targets || []).includes(x.id));
+            if (!inRange.length) return toast(`Cible hors de portée de charge : ${pk.max} tuiles au plus par un chemin autorisé.`, true);
+            // Cible retenue (l'étiquette touchée, sinon la première unité adverse de la tuile) : l'ordre est posé tout de suite, sans confirmation
+            // intermédiaire (il reste modifiable par appui long tant que le joueur n'a pas validé l'ensemble de ses ordres).
             const t = inRange[0];
-            pk.target = t.id;
-            pk.check = null;
-            request('battle-charge-check', { unit: u.id, target: t.id }).then((r) => {
-                if (!r.success || LAND.pick !== pk || pk.target !== t.id) return;
-                pk.check = r;
-                if (LAND.confirm?.unit === t.id) { LAND.confirm.buttons[0].label = `⚔️ Charger (${hexDist(u.tile, t.tile)} hex)${chargePicto(r)}`; placeMapConfirm(); }
-            });
-            showMapConfirm({ unit: t.id, buttons: [
-                { label: `⚔️ Charger (${hexDist(u.tile, t.tile)} hex)`, cls: 'ok', fn: () => { LAND.pick = null; hideMapConfirm(); updateBatUI(); requestDraw(); sendOrder(u, { type: 'charge', target: t.id }); } },
-                { label: '✕', cls: 'x', fn: () => { pk.target = null; hideMapConfirm(); } }
-            ] });
+            LAND.pick = null;
+            hideMapConfirm();
             updateBatUI();
+            requestDraw();
+            landEmit('battle-order', { unit: u.id, order: { type: 'charge', target: t.id } }).then((r) => {
+                if (!r.success) return;
+                const o = LAND.view.b?.orders?.[u.id];
+                toast(`Charge sur ${unitLbl(t)}${o ? chargePicto(o, false) : ''}`);
+                if (isFlierU(u)) setTimeout(() => askAir(u), 50);
+                if (LAND.reach) { LAND.reach = null; requestDraw(); }
+            });
         }
 
+        // Unité volante (v, vs) : « en vol » (par défaut) ou « au sol », choisi à chaque ordre par deux boutons posés à côté d'elle.
+        const isFlierU = (u) => u && (u.kin === 'v' || u.kin === 'vs');
+        function askAir(u) {
+            const cur = LAND.view.b?.orders?.[u.id]?.air !== false;
+            showMapConfirm({ unit: u.id, buttons: [
+                { label: `✈️ En vol${cur ? ' ✓' : ''}`, cls: cur ? 'ok' : '', fn: () => { hideMapConfirm(); landEmit('battle-air', { unit: u.id, air: true }).then((r) => { if (r.success) toast('En vol : voit et est vue par-dessus les obstacles (sauf montagnes), se déplace en volant.'); }); } },
+                { label: `🦶 Au sol${cur ? '' : ' ✓'}`, cls: cur ? '' : 'ok', fn: () => { hideMapConfirm(); landEmit('battle-air', { unit: u.id, air: false }).then((r) => { if (r.success) toast('Au sol : voit comme une grande taille, se déplace comme une unité au sol.'); }); } }
+            ] });
+        }
         function sendOrder(u, order) {
             return landEmit('battle-order', { unit: u.id, order }).then((r) => {
                 if (r.success) toast(order ? 'Ordre enregistré.' : 'Ordre effacé.');
+                if (r.success && order && isFlierU(u)) setTimeout(() => askAir(u), 50);
                 if (r.success && order && (order.type === 'depl' || order.type === 'marche')) showReach(u, order.type);
                 else if (LAND.reach) { LAND.reach = null; requestDraw(); }
                 return r;
@@ -4591,6 +4672,11 @@
         }
 
         function orderText(o, uid) {
+            const airTxt = o && (o.air === false ? ' · 🦶 au sol' : (o.air === true ? ' · ✈️ en vol' : ''));
+            const base = orderTextBase(o, uid);
+            return o ? base + airTxt : base;
+        }
+        function orderTextBase(o, uid) {
             if (!o) return '<b style="color:#c62828">⚠️ aucun ordre (obligatoire)</b>';
             const tgt = o.target ? LAND.units.find((x) => x.id === o.target) : null;
             const tl = tgt ? `${unitLbl(tgt)} (${tgt.owner})` : '?';
@@ -4598,9 +4684,9 @@
         }
 
         function startPick(u, type) {
-            const gord = LAND.view.b?.gorders?.[myKey()];
+            const gord = genAliveMine() ? LAND.view.b?.gorders?.[myKey()] : null;
             const dep = Math.max(0, u.dep || 0);
-            LAND.pick = { unit: u.id, type, max: type === 'marche' ? dep * 2 : dep + (gord === 'mvt' ? 3 : 0) };
+            LAND.pick = { unit: u.id, type, max: (type === 'marche' ? dep * 2 : dep) + (gord === 'mvt' && LAND.view.chev?.[myKey()] === u.id ? 3 : 0) };
             updateBatUI();
             requestDraw();
         }
@@ -4612,7 +4698,7 @@
             // Ordres selon les capacités de la fiche : charge = attaque de corps à corps ; tir court / long = attaque de tir ; artillerie = un seul ordre de tir.
             const caps = u.caps || { cc: true, tir: false, art: false };
             const btns = [];
-            if (caps.cc) btns.push({ label: '⚔️ Charge : touchez ensuite la cible', cls: 'btn-dark', fn: () => startChargePick(u) });
+            if (caps.cc) btns.push({ label: '⚔️ Charge : touchez ensuite la cible sur la carte', cls: 'btn-dark', fn: () => startChargePick(u) });
             if (caps.tir) btns.push({ label: '🏹 Tir court (3 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'court' }) }, { label: '🏹 Tir long (7 hexagones, malus +3)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'long' }) });
             if (caps.art) btns.push({ label: '💥 Tir d’artillerie (10 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'art' }) });
             btns.push({ label: `👣 Déplacement (dep ${u.dep}, bouger ou non au moment voulu)`, cls: 'btn-dark', fn: () => sendOrder(u, { type: 'depl' }) },
@@ -4634,17 +4720,18 @@
             if (m.step === 'charge') {
                 h += '<p class="lp-hint">⚔️ <b>Charges</b> — de la plus proche à la plus lointaine (dé en cas d’égalité). L’unité doit finir contre sa cible ; la cible se tourne vers elle.</p>';
                 h += '<div class="bat-log" style="max-height:none">' + m.queue.map((x, i) => {
-                    const st = i < m.qi ? '✔' : (i === m.qi ? '▶' : '•');
-                    const mut = x.mutual ? ` · <b>charge mutuelle</b>${x.plan ? (x.plan.none ? ' (aucun trajet)' : ` · ${x.plan.n} tuile(s) entre elles${x.plan.roll ? ` · dé ${x.plan.roll.a}/${x.plan.roll.b}` : ''}${x.plan.contact ? '' : ' · portées insuffisantes'}`) : ''}` : '';
+                    const st = x.failed ? '❌ échouée ·' : (i < m.qi ? '✔' : (i === m.qi ? '▶' : '•'));
+                    const mut = x.mutual ? ` · <b>charge mutuelle</b>${x.plan ? (x.plan.none ? ' (aucun trajet)' : ` · ${x.plan.n} tuile(s) entre elles${x.plan.roll ? ` · dé ${x.plan.roll.a}/${x.plan.roll.b}` : ''}`) : ''}` : '';
                     return `<div class="bat-row" style="${i === m.qi ? 'font-weight:700' : (i < m.qi ? 'opacity:.55' : '')}">${st} ${lbl(x.id)} ${x.mutual ? '⇄' : '→'} ${lbl(x.target)} · ${x.dist} hex${x.tie ? ` · dé ${x.tie}` : ''}${mut}</div>`;
                 }).join('') + '</div>';
                 const cur = m.queue[m.qi];
                 if (cur?.mutual) {
                     const chooser = cur.plan?.choice?.unit;
-                    h += `<p class="lp-hint">⇄ <b>Charge mutuelle</b> : les deux unités avancent l’une vers l’autre sur le trajet réel et se rencontrent à mi-chemin (un dé d10 donne une tuile de plus au meilleur score si le nombre de tuiles est impair).${chooser ? ` ${lbl(chooser)} est mieux placée (terrain) : elle choisit où s’arrêter sans perdre son avantage, l’autre fait le reste du chemin.` : ''}</p>`;
+                    const cancel = cur.plan?.choice?.cancel;
+                    h += `<p class="lp-hint">⇄ <b>Charge mutuelle</b> : les deux unités avancent l’une vers l’autre sur le trajet réel et se rencontrent à mi-chemin (un d10 donne une tuile de plus au meilleur score si le nombre de tuiles est impair). Il y a toujours contact. Même modificateur de décor maximum des deux côtés : combat au milieu.${cur.plan?.choice?.bridge ? ` <b>Pont</b> : chaque unité est sur sa tuile d’entrée ; le dé place la charge du côté de ${lbl(chooser)}, qui garde sa tuile ; l’autre vient à son contact. <b>Pas de modificateur de pont</b> pour les deux unités.` : ''}${chooser && !cur.plan?.choice?.bridge ? (cancel ? ` Les deux atteignent une tuile protectrice à la même distance : le dé place le combat du côté de ${lbl(chooser)}, <b>les bonus de terrain s’annulent</b>.` : ` ${lbl(chooser)} croise sur sa moitié du trajet un décor au modificateur plus fort que tout ce que croise l’autre (colline, forêt, construction, tuile juste avant un pont) : elle choisit de s’y arrêter ou d’aller à mi-chemin ; l’autre vient à son contact, quelle que soit sa portée.`) : ''}</p>`;
                     const act = (m.actors || [])[0];
-                    if (act) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${act}">⏭ Pas de charge</button></div><p class="lp-hint">Appui long sur ${lbl(act)} : ${chooser ? 'les tuiles possibles' : 'la tuile de rencontre'} s’entoure${chooser ? 'nt' : ''} de vert. Touchez-la : les deux unités se placent face à face.</p>`;
-                } else if (cur && (m.actors || []).includes(cur.id)) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${cur.id}">⏭ Cette unité ne charge pas</button></div><p class="lp-hint">Appui long sur l’unité : les tuiles possibles s’entourent de vert. Puis <b>touchez une tuile verte</b> (ou glissez l’unité dessus).</p>`;
+                    if (act) h += `${state.isAdmin ? `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${act}">⏭ Pas de charge (MJ)</button></div>` : ''}<p class="lp-hint">Appui long sur ${lbl(act)} : ${chooser ? 'les tuiles possibles' : 'la tuile de rencontre'} s’entoure${chooser ? 'nt' : ''} de vert. Touchez-la : les deux unités se placent face à face.</p>`;
+                } else if (cur && (m.actors || []).includes(cur.id)) h += `${state.isAdmin ? `<div class="lp-actions"><button class="btn btn-dark" data-land="mskip" data-u="${cur.id}">⏭ Annuler cette charge (MJ)</button></div>` : ''}<p class="lp-hint">⚔️ La charge est obligatoire. Appui long sur l’unité : les tuiles possibles s’entourent de vert. Puis <b>touchez une tuile verte</b> (ou glissez l’unité dessus).</p>`;
             } else if (m.step === 'move') {
                 const cnt = (t) => LAND.units.filter((u) => u.team === t && b.orders?.[u.id] && (b.orders[u.id].type === 'depl' || b.orders[u.id].type === 'marche') && !m.moved?.[u.id]).length;
                 if (m.roll) h += `<p class="lp-hint">🎲 Dé des déplacements : ${teamName('t1')} <b>${m.roll.t1}</b> · ${teamName('t2')} <b>${m.roll.t2}</b></p>`;
@@ -4678,9 +4765,27 @@
         const FIRE_STEP = { art: '💥 Artillerie', tir: '🏹 Tirs', flee: '🏳️ Jets de fuite', done: '✅ Tirs terminés' };
 
         // Tir : le joueur touche la cible sur la carte (cercles rouges = vue dégagée, gris pointillé = sans voir), puis « Tirer » posé à côté d'elle.
+        // Artillerie : les 3 tuiles consécutives du trajet qui finissent au point visé (1 = la plus proche de la machine, 3 = le point).
+        function artTilesC(a, b) {
+            const cube = (k) => { const [c0, r0] = k.split(',').map(Number); const x = c0 - (r0 - (r0 & 1)) / 2; return [x, -x - r0, r0]; };
+            const A = cube(a), B = cube(b), n = hexDist(a, b), eps = [1e-6, 2e-6, -3e-6], line = [];
+            for (let i = 0; i <= n; i++) {
+                const t = n ? i / n : 0, v = [0, 1, 2].map((k) => A[k] + (B[k] - A[k]) * t + eps[k]);
+                let [rx, ry, rz] = v.map(Math.round); const dx = Math.abs(rx - v[0]), dy = Math.abs(ry - v[1]), dz = Math.abs(rz - v[2]);
+                if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+                line.push(`${rx + (rz - (rz & 1)) / 2},${rz}`);
+            }
+            return [n - 2, n - 1, n].map((i) => (i >= 1 ? line[i] : null));
+        }
         function aimDialog(id) {
             const f = LAND.view.f;
             const list = f?.targets?.[id] || [];
+            if (f?.step === 'art') { // artillerie : on vise un point (tuile), pas une unité
+                hideMapConfirm();
+                LAND.pick = { unit: id, type: 'fire', art: true, targets: [] };
+                LAND.open = false; updateLandingUI(); updateBatUI(); requestDraw();
+                return;
+            }
             if (!list.length) return toast(`Aucune cible à portée (${f?.step === 'art' ? '10' : '7'} hexagones).`, true);
             hideMapConfirm();
             LAND.pick = { unit: id, type: 'fire', targets: list };
@@ -4690,6 +4795,20 @@
         }
         function handleFirePick(hitUnit, key) {
             const pk = LAND.pick;
+            if (pk.art) {
+                const su = LAND.units.find((u) => u.id === pk.unit);
+                const k = key || hitUnit?.tile;
+                if (!su?.tile || !k) return;
+                const d = hexDist(su.tile, k);
+                if (d < 1 || d > 10) return toast('Point hors de portée : 10 hexagones au plus.', true);
+                pk.point = k; pk.three = artTilesC(su.tile, k);
+                showMapConfirm({ tile: k, buttons: [
+                    { label: `💥 Tirer ici (${d} hex)`, cls: 'ok', fn: () => { const sh = pk.unit; LAND.pick = null; hideMapConfirm(); updateBatUI(); requestDraw(); landEmit('fire-aim', { unit: sh, tile: k }).then((r) => { if (r.success) { LAND.open = true; updateLandingUI(); } }); } },
+                    { label: '✕', cls: 'x', fn: () => { pk.point = null; pk.three = null; hideMapConfirm(); updateBatUI(); requestDraw(); } }
+                ] });
+                updateBatUI(); requestDraw();
+                return;
+            }
             const list = pk.targets || [];
             const byTgt = (id) => list.find((t) => t.id === id);
             let t = hitUnit && byTgt(hitUnit.id);
@@ -4720,6 +4839,13 @@
 
         function fireResultHtml(x) {
             if (!x) return '';
+            if (x.mode === 'art' && x.three) {
+                let h = `<div class="fire-box"><h4>Dernier tir : ${lblAny(x.id)} → point ${x.tile} · ${x.d} hex</h4>`;
+                h += '<div class="fdice">' + (x.shots || []).map((s) => { const n = s.tile ? x.three.indexOf(s.tile) + 1 : 0; const what = s.incident ? `incident · ${s.done ?? 0} PV à la machine` : (s.blind ? 'sans vision : rien' : (s.tile ? (s.unit ? `tuile ${n} · ${lblAny(s.unit)} −${s.done ?? 0} PV` : `tuile ${n} vide`) : 'hors du trajet')); return `<div class="fdie ${s.unit && !s.incident ? 'wound' : ''}"><b>${s.r1}</b>${s.r2 ? ` → <b>${s.r2}</b>` : ''}${s.r3 ? ` → <b>${s.r3}</b>` : ''}<small>${what}</small></div>`; }).join('') + '</div>';
+                for (const hh of x.hits || []) h += `<p>${lblAny(hh.id)} : ${hh.lost} figurine(s) retirée(s) · ${hh.destroyed ? '<b>unité détruite</b>' : `reste ${hh.left}`}</p>`;
+                if (state.isAdmin) h += `<div class="lp-actions">${(x.hits || []).map((hh) => `<button class="btn btn-dark" data-land="ffix" data-u="${hh.id}">✏️ Pertes de ${lblAny(hh.id)}</button>`).join('')}</div>`;
+                return h + '</div>';
+            }
             let h = `<div class="fire-box"><h4>Dernier tir : ${lblAny(x.id)} → ${lblAny(x.tid)} · ${x.d} hex</h4>`;
             if (x.mode === 'art') {
                 h += '<div class="fdice">' + (x.shots || []).map((s) => `<div class="fdie ${s.hit ? 'wound' : ''}"><b>${s.r1}</b>${s.r2 ? ` → <b>${s.r2}</b>` : ''}<small>${s.hit ? `touché · ${s.done ?? 0} PV` : (s.incident ? 'incident !' : 'raté')}</small></div>`).join('') + '</div>';
@@ -4751,8 +4877,8 @@
                     else if (v.myTeam === f.active) h += '<p class="lp-hint">Un coéquipier choisit son tir.</p>';
                 } else {
                     const mine = (f.actors || []).includes(p.id);
-                    h += `<div class="fire-box"><h4>🎯 ${lblAny(p.id)} → ${lblAny(p.tid)} · ${p.d} hex${p.mode === 'tir' ? (p.d > 3 ? ' (longue portée)' : ' (courte portée)') : ''}</h4>`;
-                    if (p.mode === 'art') h += `<p class="lp-hint">${p.dice} machine(s) : un dé de 4 chacune. Ligne de vue : ${p.los?.ok ? 'dégagée' : `non (${p.los?.reason || ''})`}.</p>`;
+                    h += `<div class="fire-box"><h4>🎯 ${lblAny(p.id)} → ${p.mode === 'art' ? `point ${p.tile}` : lblAny(p.tid)} · ${p.d} hex${p.mode === 'tir' ? (p.d > 3 ? ' (longue portée)' : ' (courte portée)') : ''}</h4>`;
+                    if (p.mode === 'art') h += `<p class="lp-hint">${p.dice} machine(s) : un d4 chacune. 1 à 3 : le projectile tombe sur la tuile 1, 2 ou 3 (1 = la plus proche de la machine) ; 4 : nouveau d4 (1 à 3 : la tuile correspondante si la machine voit le point, sinon rien ; 4 : incident de tir, la machine perd ses propres points d’attaque). Vision du point : ${p.los?.ok ? 'oui' : `non (${p.los?.reason || ''})`}.</p>`;
                     else h += `<p class="lp-hint">${p.points} points → <b>${p.dice} dé(s)</b> · touche sur <b>${p.thr}+</b> · armure cible ${p.arm == null ? 'aucune' : `<b>${p.arm}</b>`}${p.melee ? ' · ⚠️ cible au corps à corps (dés à 1 : tir sur une unité alliée)' : ''}</p>`;
                     for (const m of p.mods) {
                         const val = m.arm ? 'A+1' : (m.v > 0 ? `+${m.v}` : `${m.v}`);
@@ -4766,7 +4892,7 @@
                     h += '<div class="lp-actions">';
                     if (admin) h += '<button class="btn btn-primary" data-land="froll">🎲 Lancer les dés</button>';
                     if (admin || mine) h += '<button class="btn btn-dark" data-land="fcancel">✕ Annuler la visée</button>';
-                    if (admin) h += `<button class="btn btn-dark" data-land="ffix" data-u="${p.tid}">✏️ Pertes de la cible</button>`;
+                    if (admin && p.tid) h += `<button class="btn btn-dark" data-land="ffix" data-u="${p.tid}">✏️ Pertes de la cible</button>`;
                     h += '</div>';
                     if (!admin) h += '<p class="lp-hint">Le MJ vérifie les modificateurs et lance les dés.</p>';
                     h += '</div>';
@@ -4849,10 +4975,22 @@
                 const key = myKey();
                 const ready = Object.keys(b.ready || {}).some((k) => ciEq(k, state.username));
                 h += '<p class="lp-hint">📝 Chaque joueur donne un ordre à ses unités pour le prochain tour : charge, tir, déplacement, marche forcée… Les ordres sont visibles de votre équipe, cachés à l’équipe adverse.</p>';
-                if (key && v.gen?.[key]) {
+                if (key && v.gen?.[key] && b.dead?.[v.gen[key]]) h += '<p class="lp-hint">☠️ L’unité de votre général est détruite : il n’a plus de pouvoirs (vos unités ont +1 à leurs jets de fuite).</p>';
+                else if (key && v.gen?.[key]) {
                     const cur = b.gorders?.[key] ?? '';
                     const gb = (o, lab) => `<button class="lp-seg ${cur === o ? 'on' : ''}" data-land="gord" data-o="${o}">${lab}</button>`;
                     h += `<div class="bat-row"><b>Ordre du général</b>${gb('', 'aucun')}${gb('att', 'att −1')}${gb('mvt', 'mvt +3')}${gb('charge', 'charge +2')}</div>`;
+                    const chv = v.chev?.[key];
+                    const cu = chv ? LAND.units.find((x) => x.id === chv) : null;
+                    if (cur === 'att') h += '<p class="lp-hint">att −1 : toutes vos unités à 6 hexagones ou moins du général (9 pour l’Empire) attaquent avec un seuil plus bas de 1.</p>';
+                    else if (cur === 'mvt' || cur === 'charge') h += `<p class="lp-hint">${cur === 'mvt' ? 'mvt +3' : 'charge +2'} pour <b>${cu ? unitLbl(cu) : '?'}</b> (chevron doré). <button class="lp-seg" data-land="gpick" data-o="${cur}">Changer d’unité</button></p>`;
+                }
+                // Ordres du général des autres joueurs de mon équipe (et de tous une fois les ordres révélés).
+                const GLAB = { att: 'att −1 (unités à portée)', mvt: 'mvt +3', charge: 'charge +2' };
+                const others = Object.entries(b.gorders || {}).filter(([n]) => !ciEq(n, key || ''));
+                if (others.length) {
+                    h += '<div class="lbl2" style="margin-top:4px"><b>Ordres du général de mon équipe</b></div>';
+                    for (const [n, g] of others) { const cu = v.chev?.[n] ? LAND.units.find((x) => x.id === v.chev[n]) : null; h += `<p class="lp-hint">⭐ ${String(n).replace(/[<>&"]/g, '')} : <b>${GLAB[g] || g}</b>${(g === 'mvt' || g === 'charge') && cu ? ` pour ${unitLbl(cu)}` : ''}</p>`; }
                 }
                 if (mine.length) {
                     h += '<div class="lbl2" style="margin-top:4px"><b>Mes unités</b></div>';
@@ -4880,8 +5018,10 @@
             let txt = '';
             let cancel = false;
             if (LAND.pend && (batMode() || movMode())) txt = '🧭 Touchez une flèche pour l’orientation, puis ✓ sous la tuile';
+            else if (LAND.pick?.type === 'gen') { txt = `⭐ Touchez l’unité qui reçoit ${LAND.pick.order === 'mvt' ? 'mvt +3' : 'charge +2'} (cercles dorés, 6 hexagones ou moins du général, 9 pour l’Empire)`; cancel = true; }
+            else if (LAND.pick?.type === 'fire' && LAND.pick.art) { txt = LAND.pick.point ? '💥 Touchez « Tirer ici » (ou un autre point)' : '💥 Touchez le point maximal du tir (10 hexagones au plus, contour rouge) : les 3 tuiles où le projectile peut tomber s’affichent'; cancel = true; }
             else if (LAND.pick?.type === 'fire') { txt = LAND.pick.target ? '🏹 Touchez « Tirer » à côté de la cible (ou une autre cible)' : '🎯 Touchez la cible (rouge : vue dégagée · gris : sans voir +4)'; cancel = true; }
-            else if (LAND.pick) { txt = LAND.pick.type === 'charge' ? (LAND.pick.target ? '⚔️ Touchez « Charger » à côté de la cible (ou une autre cible)' : `⚔️ Touchez l’unité adverse à charger (${LAND.pick.max} hexagones au plus)`) : `👣 Touchez la tuile de destination (${LAND.pick.max} hexagones au plus)`; cancel = true; }
+            else if (LAND.pick) { txt = LAND.pick.type === 'charge' ? (LAND.pick.target ? '⚔️ Touchez « Charger » à côté de la cible (ou une autre cible)' : `⚔️ Touchez l’unité adverse à charger (cercles rouges, ${LAND.pick.max} tuiles au plus jusqu’au contact)`) : `👣 Touchez la tuile de destination (${LAND.pick.max} hexagones au plus)`; cancel = true; }
             else if (v.phase === 'bplace' && v.b) {
                 if (batTurn()) txt = '🎲 À vous de placer : glissez une de vos unités';
                 else txt = v.myTeam ? 'Placement : vous attendez l’autre équipe dans votre secteur' : 'Placement de bataille en cours';
@@ -5092,7 +5232,7 @@
                 place: { title: 'Phase 3 · Dépôt des unités', items: [
                     'Faites glisser vos unités <b>une par une</b> depuis le <b>sélecteur d’unités</b> (comme les sélecteurs de tuiles : appui long puis glisser pour le ranger sur un autre bord ; il se replie seul après 10 s, appui long sur la carte pour le rouvrir) vers une tuile de votre zone. Glissez un jeton pour le déplacer ; la <b>croix rouge</b> d’une étiquette le remet dans le sélecteur.',
                     'Chaque unité a son étiquette. Touchez le petit <b>drapeau</b> d’une étiquette pour lui attribuer ou lui retirer un étendard (dans la limite de la colonne E de sa ligne). <b>Double toucher</b> : la fiche de cette unité. <b>Appui long</b> : portée de déplacement ; les tuiles au <b>contour bleu</b> sont celles où le bonus de sa section s’applique ; contour vert : portée normale.',
-                    '<b>Général (trois chevrons noirs dans un rond jaune)</b> : touchez la puce « Général » du sélecteur puis l’une de vos unités posées (plusieurs figurines). Elle peut se poser jusqu’à <b>2 tuiles plus loin</b> (tuiles au contour doré à l’appui long), sans dépasser les frontières. Les unités à <b>6 hexagones ou moins</b> du général reçoivent un <b>chevron seul</b> (gris) : touchez-le pour l’activer (doré) sur <b>une seule</b> unité, qui reçoit le même bonus.',
+                    '<b>Général (trois chevrons noirs dans un rond jaune)</b> : touchez la puce « Général » du sélecteur puis l’une de vos unités posées (plusieurs figurines). Le général ne donne plus de tuiles supplémentaires au dépôt. Les unités à <b>6 hexagones ou moins</b> du général (<b>9</b> pour l’Empire) reçoivent un <b>chevron seul</b> (gris) : touchez-le pour l’activer (doré) sur <b>une seule</b> unité. Au premier placement, en simulation comme en jeu, elle pourra aller <b>3 tuiles plus loin</b> (tuiles au contour doré à l’appui long).',
                     'Vous ne voyez pas les unités de l’équipe adverse avant le verrouillage.',
                     '<b>▶ Verrouiller</b> quand tout est placé : tout le monde voit alors tous les débarquements. ◀ revient aux choix.',
                     '<b>🗺️ Simulation</b> (bouton du sélecteur, à côté de 📜 et ⚔️) : une carte virtuelle où chaque joueur essaie de déplacer ses unités déposées, dans leur portée (appui long pour la voir ; contour vert, bleu ou doré). Une seule unité par tuile en dehors des tuiles de dépôt ; les montagnes sont interdites et l’eau aussi, sauf pour les Saurus et sur un pont. Le bouton <b>↩️</b> ramène à la carte de dépôt ; <b>↺</b> remet toutes vos unités à leur position de dépôt. Si vous changez la tuile de dépôt d’une unité, sa simulation revient à sa position de départ. Vos coéquipiers voient votre simulation.',
@@ -5112,6 +5252,7 @@
                     '<b>Ensuite les déplacements</b>, à tour de rôle (un nouveau dé désigne à chaque tour l’équipe qui commence) : glissez l’unité vers une tuile en surbrillance (jamais à côté d’un adversaire), choisissez l’orientation, validez. « Reste en place » passe son tour.',
                     'Le MJ peut <b>annuler la dernière action</b> ou terminer l’étape. Les terrains (montagne, eau) bloquent l’arrêt ; la distance est comptée en hexagones à vol d’oiseau.'] },
                 orders: { title: 'Phase 7 · Ordres', items: [
+                    'Vision des charges (👁 / œil barré) : calculée à la pose de l’ordre selon la règle de vision (niveaux, abris, forêt, arrière, unités volantes) ; recalculée à la révélation si la cible est une unité volante.',
                     'Chaque joueur donne un ordre à <b>chacune</b> de ses unités par un <b>appui long sur l’unité</b> : charge (unités de corps à corps), tir court ou tir long (unités de tir), tir d’artillerie, déplacement (le joueur choisira de bouger ou non au moment des déplacements), marche forcée, tirailleur. Plus, s’il a un général, l’ordre du général. Impossible de valider tant qu’une unité n’a pas d’ordre.',
                     'Les ordres sont visibles de votre équipe et <b>cachés à l’équipe adverse</b>. Le MJ peut les révéler à tous.',
                     'Ensuite : déplacements, puis tirs avec dés. Le corps à corps se résout encore à la main.'] },
@@ -5134,7 +5275,7 @@
                     'Faites glisser vos unités <b>une par une</b> depuis le <b>sélecteur d’unités</b> vers une tuile de votre zone.',
                     'Pour déplacer une unité déjà posée, glissez son jeton sur une autre tuile de votre zone. Plusieurs unités peuvent partager une tuile.',
                     'Chaque unité a son étiquette. Touchez le petit <b>drapeau</b> d’une étiquette pour lui attribuer ou lui retirer un étendard (dans la limite de la colonne E de sa ligne). <b>Double toucher</b> : la fiche de cette unité. <b>Appui long</b> : portée de déplacement ; les tuiles au <b>contour bleu</b> sont celles où le bonus de la section s’applique ; contour vert : portée normale.',
-                    '<b>Général (trois chevrons noirs dans un rond jaune)</b> : touchez la puce « Général » du sélecteur puis l’une de vos unités posées (plusieurs figurines). Elle peut se poser jusqu’à <b>2 tuiles plus loin</b> (tuiles au contour doré à l’appui long), sans dépasser les frontières. Les unités à <b>6 hexagones ou moins</b> du général reçoivent un <b>chevron seul</b> (gris) : touchez-le pour l’activer (doré) sur <b>une seule</b> unité, qui reçoit le même bonus.',
+                    '<b>Général (trois chevrons noirs dans un rond jaune)</b> : touchez la puce « Général » du sélecteur puis l’une de vos unités posées (plusieurs figurines). Le général ne donne plus de tuiles supplémentaires au dépôt. Les unités à <b>6 hexagones ou moins</b> du général (<b>9</b> pour l’Empire) reçoivent un <b>chevron seul</b> (gris) : touchez-le pour l’activer (doré) sur <b>une seule</b> unité. Au premier placement, en simulation comme en jeu, elle pourra aller <b>3 tuiles plus loin</b> (tuiles au contour doré à l’appui long).',
                     'Vos coéquipiers voient vos unités en direct ; l’autre équipe ne voit rien avant le verrouillage.',
                     '<b>🗺️ Simulation</b> (bouton du sélecteur, à côté de 📜 et ⚔️) : une carte virtuelle où chaque joueur essaie de déplacer ses unités déposées, dans leur portée (appui long pour la voir ; contour vert, bleu ou doré). Une seule unité par tuile en dehors des tuiles de dépôt ; les montagnes sont interdites et l’eau aussi, sauf pour les Saurus et sur un pont. Le bouton <b>↩️</b> ramène à la carte de dépôt ; <b>↺</b> remet toutes vos unités à leur position de dépôt. Si vous changez la tuile de dépôt d’une unité, sa simulation revient à sa position de départ. Vos coéquipiers voient votre simulation.'] },
                 locked: { title: 'Placements verrouillés', items: [
@@ -5149,6 +5290,7 @@
                     'Puis les déplacements à tour de rôle : glissez une unité vers une tuile en surbrillance, choisissez l’orientation et validez, ou touchez « Reste en place ».'] },
                 orders: { title: 'Ordres', items: [
                     '<b>Appui long sur chacune de vos unités</b> pour lui donner son ordre : charge (corps à corps), tir court ou long (unités de tir), tir d’artillerie, déplacement (vous choisirez de bouger ou non au moment des déplacements), marche forcée ou tirailleur. Toutes vos unités doivent avoir un ordre, puis <b>Valider mes ordres</b> (panneau ⚔️).',
+                    'Unité volante : après son ordre, deux boutons apparaissent à côté d’elle : <b>✈️ En vol</b> (par défaut : voit et est vue par-dessus les obstacles sauf montagnes, se déplace en volant) ou <b>🦶 Au sol</b> (voit comme une grande taille, se déplace au sol). Le choix vaut pour tout le tour et reste caché à l’adversaire jusqu’à la révélation.',
                     'Vos coéquipiers voient vos ordres ; l’équipe adverse ne les voit pas avant que le MJ les révèle.'] },
                 fire: { title: 'Tirs', items: [
                     'L’artillerie tire d’abord, puis les autres tirs ; les équipes alternent (un dé désigne qui commence chaque étape).',
@@ -5417,7 +5559,11 @@
             else if (k === 'ffix' && state.isAdmin) fixDialog(b.dataset.u);
             else if (k === 'fflee' && state.isAdmin) landEmit('fire-flee', { unit: b.dataset.u, skip: b.dataset.skip === '1' });
             else if (k === 'fnext' && state.isAdmin) adminNext();
-            else if (k === 'gord') landEmit('battle-gorder', { order: b.dataset.o || null });
+            else if (k === 'gord' || k === 'gpick') {
+                const o = b.dataset.o || null;
+                if ((o === 'mvt' || o === 'charge') && (k === 'gpick' || !LAND.view.chev?.[myKey()])) startGenPick(o);
+                else landEmit('battle-gorder', { order: o });
+            }
             else if (k === 'bready') { const rd = Object.keys(LAND.view.b?.ready || {}).some((x) => ciEq(x, state.username)); landEmit('battle-ready', { on: !rd }); }
             else if (k === 'breveal' && state.isAdmin) landEmit('battle-reveal', { on: !LAND.view.b?.revealed });
             else if (k === 'batundo' && state.isAdmin) landEmit('battle-undo', {});
@@ -5883,6 +6029,7 @@
                 requestDraw();
             });
 
+            socket.on('edit-refused', (msg) => toast(String(msg || 'Modification refusée.'), true));
             socket.on('update-lock', (locked) => {
                 state.isLocked = Boolean(locked);
                 updateLockUI();
