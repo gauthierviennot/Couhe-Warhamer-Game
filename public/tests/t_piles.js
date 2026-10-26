@@ -1,0 +1,48 @@
+// Bonus d'armée (BA) : unités marquées BA seulement ; Elfes sylvains (forêt gratuite, att −1 près d'une forêt), Saurus (eau, att −1 près d'une rivière), Empire (général à 9 hex).
+process.env.DATA_DIR = '/tmp/dd_' + Date.now(); process.env.PORT = '8866'; process.env.GAME_TEST = '1'; process.env.TEST_PILES = '1';
+const EE = require('events');
+require('./harness.js'); require('../server.js');
+setTimeout(async () => {
+  const io = global.__io, S = global.__srv;
+  const mk = (id) => { const s = new EE(); s.id = id; s.data = {}; s.handshake = { address: '1.1.1.1' }; s.join = () => {}; s.leave = () => {}; s.broadcast = { emit() {} }; s.log = [];
+    s.call = (ev, p) => new Promise((r) => { const hs = s.listeners(ev); if (!hs.length) return r({ error: 'no handler ' + ev }); Promise.resolve(hs[0](p, (res) => r(res))); setTimeout(() => r({ timeout: true }), 3000); });
+    s.emit = (ev, ...a) => { s.log.push([ev, a[0]]); return true; }; io.sockets.sockets.set(id, s); io.h(s); return s; };
+  let nok = 0, nko = 0;
+  const ok = (c, m) => { c ? nok++ : nko++; console.log((c ? 'OK  ' : 'FAIL') + ' ' + m); };
+  const mj = mk('a'), b = mk('b'), c = mk('c');
+  await mj.call('set-username', { name: 'mj', password: 'mj', clientId: 'c1' }); await b.call('set-username', { name: 'bob', clientId: 'c2' }); await c.call('set-username', { name: 'cat', clientId: 'c3' });
+  await mj.call('new-map', { cols: 22, rows: 20 });
+  const top = [], bot = []; for (let x = 0; x < 22; x++) { top.push(`${x},1`); bot.push(`${x},18`); }
+  const edit = (d) => mj.listeners('edit-tiles')[0](d);
+  edit({ action: 'mark', mark: 'diamond', keys: [...top, ...bot] });
+  await mj.call('landing-start', {});
+  const L = (s) => s.log.filter((x) => x[0] === 'landing').pop()[1];
+  const zs = L(mj).zones.map((z) => z.id);
+  await mj.call('landing-group', { zone: zs[0], group: 'A' }); await mj.call('landing-group', { zone: zs[1], group: 'B' });
+  await mj.call('fiches-team', { op: 'assign', name: 'bob', team: 't1' }); await mj.call('fiches-team', { op: 'assign', name: 'cat', team: 't2' });
+  await mj.call('fiches-pick', { name: 'bob', army: 'elfes_sylvains', legion: '1' }); await mj.call('fiches-pick', { name: 'cat', army: 'saurus', legion: '1' });
+  await mj.call('landing-teams', { A: 't1' });
+  await b.call('landing-choose', { zone: zs[0] }); await c.call('landing-choose', { zone: zs[1] });
+  await mj.call('landing-freeze', { force: true });
+  const lb = L(b).lines.filter((l) => l.owner === 'bob'), lc = L(c).lines.filter((l) => l.owner === 'cat');
+  const id1 = (lines, owner, re) => { const l = lines.find((x) => re.test(x.name)); return l ? `${owner}|${l.uid}#1` : null; };
+  const E = id1(lb, 'bob', /^inf legere/), EA = id1(lb, 'bob', /^archer lourd/), Z = id1(lc, 'cat', /^inf legere/), ZA = id1(lc, 'cat', /^archer/);
+  ok(E && EA && Z && ZA, 'unités de test trouvées');
+  const spot = { [E]: '5,8', [EA]: '10,8', [Z]: '5,12', [ZA]: '10,12' };
+  const allB = lb.flatMap((l) => Array.from({ length: l.qty }, (_, i) => `bob|${l.uid}#${i + 1}`)), allC = lc.flatMap((l) => Array.from({ length: l.qty }, (_, i) => `cat|${l.uid}#${i + 1}`));
+  for (const u of allB) await b.call('landing-place', { units: [u], tile: spot[u] ? `${spot[u].split(',')[0]},1` : '20,1' });
+  for (const u of allC) await c.call('landing-place', { units: [u], tile: spot[u] ? `${spot[u].split(',')[0]},18` : '20,18' });
+  await mj.call('landing-lock', { force: true });
+  await mj.call('landing-battle', {});
+  const S2 = global.__srv, B = S2.state.landing.b;
+  for (const c of B.clusters || []) c.active = 't1';
+  const pile = allB.filter((x) => S2.state.landing.placed[x] === '20,1');
+  const U1 = pile[0], mate = pile[1], home = '20,1';
+  ok(Boolean(mate), 'deux unités déposées sur la même tuile de dépôt');
+  let r = await b.call('battle-place', { unit: U1, tile: home, orient: 1 }); ok(r.success, 'la première reste sur sa tuile de dépôt ' + (r.message || ''));
+  for (const c of B.clusters || []) c.active = 't1';
+  r = await b.call('battle-place', { unit: mate, tile: home, orient: 1 }); ok(!r.success && /une seule unité/.test(r.message), 'la deuxième ne peut pas y rester : ' + r.message);
+  r = await mj.call('landing-orders', { force: true }); ok(!r.success && /même tuile de dépôt/.test(r.message), 'passage aux ordres refusé tant qu’une pile reste : ' + r.message);
+  console.log(`\n${nok} OK, ${nko} FAIL`);
+  process.exit(0);
+}, 300);

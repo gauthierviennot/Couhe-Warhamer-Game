@@ -1,0 +1,79 @@
+UNITES ATYPIQUES RESTANT A TRAITER
+==================================
+
+1) SERVANTS NON AFFECTES A UNE UNITE COMPOSEE
+- Elfes noirs, legion 1 : 6 servants pour 2 machines
+- Nains, legion 1 : 8 servants pour 5 machines (2 canons, 1 canon lourd, 2 autels de guerre)
+- Skavens, legion 1 : 16 servants pour 6 machines (2 canons, 2 autels de guerre, 2 armes lourdes)
+  -> a preciser : nombre de servants par machine (ou 2 par machine, reste en lignes normales)
+
+2) AUTRES LIGNES EN ROUGE
+- Hauts-elfes, legion 1 : mage 5
+- Thyranides, legion 1 : infanterie lourde 4
+
+3) POINTS EN SUSPENS (colores non rouge, traites comme unites simples)
+- Chaos, legion 2 : jump 14
+- Chaos, legion 2 : infanterie lourde ailee 6
+- Empire, legion 3 : tirailleur 6
+- Autres lignes irregulieres a revoir plus tard
+
+4) ANOMALIE DE DONNEES
+- Orcs, archer (T) : 55 figurines au total dans l'armee, mais les legions en attribuent 56
+  (1 figurine de trop, rien dans "Non integre")
+  -> a preciser : retirer 1 figurine d'une legion, ou corriger le total a 56
+
+5) ALERTE ETENDARDS (cellules E en rouge dans les fiches, a verifier)
+Regle appliquee : les etendards de la ligne de base vont d'abord aux unites restees simples,
+le reste a l'unite composee ; si la figurine seule avait deja un etendard, l'unite composee le prend.
+- Nains, legion 1 : inf lourde (E=3 pour 5 unites) -> 4 unites simples (3 etendards), composee (inf lourde + champion) sans etendard
+- Orcs, legion 1 : caval lourde (E=2 pour 4 unites) -> 3 unites simples (2 etendards) ; le champion sur sanglier avait deja 1 etendard -> la composee prend 1 etendard
+- Hauts-elfes, legion 1 : caval lourde (E=4 pour 5 unites) -> 4 unites simples (4 etendards), composee (caval lourde + commandeur a cheval) sans etendard
+- Autres composees (machines + servants, mage + medusa, fusiller leger + chef) : aucun etendard au depart, rien a verifier
+
+DEJA TRAITE
+- Hauts-elfes, legion 1 : 2 unites d'infanterie lourde (16 fig.) et 5 d'infanterie legere (40 fig.) (MJ, 25/10 : armee en construction) ; composition de legion 2iL,5il
+- Empire, legion 3 : les 12 archers forment 1 unite montee sur l'oliphant (unite composee oliphant + archers, 13 fig.) (MJ, 25/10)
+- Elfes noirs, legion 1 : medusa dans l'unite de mages (confirme par le MJ, 25/10)
+- Servants + machines en unites composees (2 par machine) : Saurus, Orcs, Nains legion 2, Morts-vivants, Ispanie, Hauts-elfes, Gobelins, Federation, Empire, Chaos, Bretonnie, Alliance
+- Mage + medusa (Elfes noirs) ; ctan Necrons seul (colonne U cochee)
+- Figurines sans legion -> legion "Non integre"
+
+6) UNITES QUI SAUTENT (jump) OU VOLENT : LITIGES D'INDICATEUR (a verifier pour le deplacement)
+Regle retenue pour l'instant (document des regles) :
+- vol (v) et vol stationnaire (vs, idem vol) : franchissent montagnes et rivieres, ne s'arretent ni sur montagne ni sur eau (hors pont) ;
+- saut (jump) : franchit montagnes et rivieres comme le vol, sans s'y arreter ;
+- Saurus : traversent ET peuvent s'arreter dans l'eau ; toutes les autres armees traversent l'eau seulement sur un pont.
+Indicateur utilise : la colonne « typ » (K) de la fiche (v, vs, j) ; le code du type de ligne (v dans mv, tv, iLv...) ne suffit pas :
+- Alliance : arlequin (jump) -> type iL, aucun « j » dans le code (K = j)
+- Gobelins : araignee geante (2 att, jump, haut) -> type tm, aucun « j » dans le code (K = j)
+- Necrons : bombardier (v) -> type vide (K = vs)
+- Nains : helicoptere (v) -> aucune ligne de legion, type vide (K = vs)
+- Chaos : inf lourde d'assaut (jump) -> type iLj (code correct)
+- Federation : marin's d'assaut (jump) -> type iLj (code correct)
+- Alliance landspeeder (vs) et Federation bombardier (vs) -> type tv (code correct)
+A confirmer : faut-il se fier a la colonne « typ » (K) plutot qu'au code du type ? (propose : oui)
+A confirmer : une unite qui saute peut-elle aussi franchir une riviere ? (document : oui)
+
+7) COLONNE « typ » (K) : VALEURS ET LITIGES (indicateur de deplacement)
+Valeurs presentes dans K : m (160 unites, marche normale), v (21, vol), vs (6, vol stationnaire = idem vol),
+j (4, saut), s (13, nage : toutes les unites Saurus, qui traversent et s'arretent dans l'eau).
+K concorde avec les balises du nom ((v), (jump), (BA) pour les Saurus) sauf dans 3 cas :
+- Nains, helicoptere : nom « (v) », K = vs -> sans incidence (v et vs se deplacent pareil)
+- Necrons, bombardier : nom « (v) », K = vs -> sans incidence (v et vs se deplacent pareil)
+- Saurus, mage volant (BA,mag) : K = vs mais nom sans balise de vol. DECISION DU MJ : il vole ET peut s'arreter dans l'eau
+  -> a gerer comme cas particulier : vol (franchit montagnes et rivieres) + nage (arret autorise dans l'eau).
+  Son K « vs » remplace le « s » des autres Saurus : prevoir de le traiter comme Saurus (armee saurus) en plus du vol.
+Regle retenue : on se fie a la colonne K (plus fiable que le code du type de ligne : iL pour l'arlequin, tm pour l'araignee geante, etc.).
+Pour les armees creees ou modifiees a la main par le MJ : renseigner K correctement (v, vs, j, s, m).
+Points deja notes en section 6 : arlequin (Alliance) et araignee geante (Gobelins) sautent mais leur code de type n'a pas de « j » ;
+bombardier (Necrons) et helicoptere (Nains) volent mais leur type de ligne est vide.
+
+8) REGLES DE DEPLACEMENT RETENUES (a conserver avec les cas particuliers ci-dessus)
+- Route (terrain « chemin ») : +2 de deplacement si l'unite termine son deplacement dessus (sauf vol/saut).
+  NE S'APPLIQUE PAS AUX CHARGES (decision du MJ).
+- Foret et marecage : +1 chacun (cumulables) sauf en charge et pour les unites qui volent ou sautent.
+- Montagne : infranchissable sauf vol et saut ; on ne s'y arrete jamais.
+- Eau/riviere : traversable seulement sur un pont, sauf vol, saut et Saurus (qui peuvent aussi s'y arreter).
+- Cavalerie : ne peut pas monter sur une fortification.
+- Unite adverse : barre le passage ; une unite ne s'arrete jamais a cote d'un adversaire sauf en charge.
+- Unite qui vole ou saute : peut passer au-dessus d'une unite adverse (confirme par le MJ) ; elle ne s'arrete pas a cote d'un adversaire sauf en charge.
