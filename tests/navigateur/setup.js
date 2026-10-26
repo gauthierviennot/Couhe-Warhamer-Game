@@ -35,6 +35,7 @@ module.exports = async function setup({ page, S, mk, ps }, orders, ctx_armies, o
     for (const So of [b, c]) for (const u of L(So).b.actors || []) { const r = await So.call('battle-place', { unit: u, tile: spot[u], orient: So === b ? 1 : 4 }); if (r.success) { prog = true; break; } }
     if (!prog) break;
   }
+  if (opts.stopBeforeOrders) return { b, c, L, U };
   await ps.call('landing-orders', {});
   for (const [who, unit, target] of orders) { const So = who === 'b' ? b : c; const r = await So.call('battle-order', { unit: U[unit], order: { type: 'charge', target: U[target] } }); console.log('ordre', unit, '→', target, r.success ? 'ok' : r.message); }
   await __ready(b, L); await __ready(c, L);
