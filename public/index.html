@@ -193,7 +193,10 @@
         .fiches-overlay.mini .fiches-admin { display: none; }
         .landing-panel { position: fixed; left: calc(68px + var(--safe-left, 0px)); right: calc(68px + var(--safe-right, 0px)); bottom: calc(76px + var(--safe-bottom)); max-width: 460px; max-height: 46vh; overflow: auto; z-index: 90; background: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 4px 18px rgba(0,0,0,.35); font-size: .85rem; }
         .landing-panel[hidden] { display: none; }
-        .lp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        #testBanner { position: fixed; top: calc(6px + var(--safe-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 95; background: #f3e5f5; color: #4a148c; border: 3px solid #7b1fa2; border-radius: 18px; padding: 4px 12px; font: 600 .85rem system-ui, sans-serif; box-shadow: 0 2px 10px #0005; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #testBanner[hidden] { display: none; }
+        .lp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; cursor: move; touch-action: none; user-select: none; }
+        .lp-head::before { content: '⠿'; color: #999; font-size: 1.1rem; }
         .lp-phase { flex: 1; color: #666; font-size: .75rem; }
         .lp-x { border: none; background: #eee; border-radius: 8px; width: 30px; height: 28px; cursor: pointer; }
         .lp-hint { color: #555; margin: 6px 0; font-size: .8rem; line-height: 1.35; }
@@ -882,8 +885,10 @@
             || Boolean(navigator.standalone);
         const isFullscreen = () => Boolean(document.fullscreenElement || document.webkitFullscreenElement) || isStandalone();
 
+        // Ordinateur (souris, pas d'écran tactile principal) : jamais de plein écran automatique.
+        const isDesktop = () => window.matchMedia('(hover: hover) and (pointer: fine)').matches;
         function requestFullscreen() {
-            if (closing || isFullscreen()) return;
+            if (closing || isFullscreen() || isDesktop()) return;
             const root = document.documentElement;
             const enter = root.requestFullscreen || root.webkitRequestFullscreen;
             if (!enter) return;
@@ -3586,18 +3591,25 @@
                     }
                     const endKey = o.target ? byId.get(o.target)?.tile : o.tile;
                     if (!endKey) continue;
-                    const b = cen(endKey);
+                    let b = cen(endKey);
                     const col = { charge: '#d32f2f', tir: '#f57c00', depl: '#1976d2', marche: '#7b1fa2' }[o.type] || '#555';
-                    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = R * 0.12; c.lineCap = 'round';
+                    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+                    const len = Math.hypot(b.x - a.x, b.y - a.y);
+                    // La flèche s'arrête au bord de la tuile de la cible : sa pointe reste visible devant le jeton (sens de la charge : de l'unité qui charge vers sa cible).
+                    if (o.target && len > R * 1.6) b = { x: b.x - Math.cos(ang) * R * 0.9, y: b.y - Math.sin(ang) * R * 0.9 };
+                    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = R * (o.type === 'charge' ? 0.16 : 0.12); c.lineCap = 'round';
                     c.setLineDash(o.type === 'charge' ? [] : o.type === 'tir' ? [R * 0.18, R * 0.14] : o.type === 'depl' ? [R * 0.35, R * 0.14] : [R * 0.1, R * 0.12]);
                     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
                     c.setLineDash([]);
-                    const ang = Math.atan2(b.y - a.y, b.x - a.x);
-                    c.beginPath();
-                    c.moveTo(b.x, b.y);
-                    c.lineTo(b.x - Math.cos(ang - 0.45) * R * 0.5, b.y - Math.sin(ang - 0.45) * R * 0.5);
-                    c.lineTo(b.x - Math.cos(ang + 0.45) * R * 0.5, b.y - Math.sin(ang + 0.45) * R * 0.5);
-                    c.closePath(); c.fill();
+                    const head = (x, y, sz) => {
+                        c.beginPath();
+                        c.moveTo(x, y);
+                        c.lineTo(x - Math.cos(ang - 0.5) * sz, y - Math.sin(ang - 0.5) * sz);
+                        c.lineTo(x - Math.cos(ang + 0.5) * sz, y - Math.sin(ang + 0.5) * sz);
+                        c.closePath(); c.fillStyle = col; c.fill(); c.lineWidth = R * 0.05; c.strokeStyle = '#fff'; c.stroke();
+                    };
+                    head(b.x, b.y, R * (o.type === 'charge' ? 0.75 : 0.5));
+                    if (o.type === 'charge' && len > R * 3) head((a.x + b.x) / 2 + Math.cos(ang) * R * 0.25, (a.y + b.y) / 2 + Math.sin(ang) * R * 0.25, R * 0.55); // flèche au milieu du trait
                 }
                 // Tir en préparation : trait épais du tireur vers sa cible, viseur sur la cible.
                 const fp = LAND.view.phase === 'fire' ? LAND.view.f?.pending : null;
@@ -3608,6 +3620,23 @@
                         c.fillStyle = '#5d3200'; c.font = `700 ${R * 0.8}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(i + 1), q.x, q.y + R * 0.55); });
                 };
                 if (fp && fp.mode === 'art' && fp.tile && byId.get(fp.id)?.tile) drawArt(byId.get(fp.id).tile, fp.tile, fp.three);
+                // Détail des charges : trajet de la charge choisie (départ cerclé, tuiles numérotées, arrivée), cible entourée.
+                const cwx = LAND.cw?.open && LAND.view.phase === 'move' ? LAND.view.m?.queue?.[LAND.cw.sel] : null;
+                if (cwx) {
+                    const tgt = byId.get(cwx.target)?.tile;
+                    if (tgt) { const t = cen(tgt); c.lineWidth = R * 0.14; c.strokeStyle = '#c62828'; c.setLineDash([R * 0.2, R * 0.12]); hexPathAt(c, t.x, t.y, R * 0.95); c.stroke(); c.setLineDash([]); }
+                    const routes = cwx.res ? cwx.res.units.map((r) => r.path) : [[byId.get(cwx.id)?.tile, tgt].filter(Boolean)];
+                    for (const path of routes) {
+                        if (!path?.length) continue;
+                        const pts = path.map(cen);
+                        c.strokeStyle = 'rgba(255,214,0,0.95)'; c.lineWidth = R * 0.34; c.lineCap = 'round'; c.lineJoin = 'round';
+                        c.beginPath(); pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.stroke();
+                        c.strokeStyle = '#c62828'; c.lineWidth = R * 0.12; c.stroke();
+                        pts.forEach((p, j) => { if (!j) { c.lineWidth = R * 0.12; c.strokeStyle = '#1b1b1b'; c.beginPath(); c.arc(p.x, p.y, R * 0.8, 0, Math.PI * 2); c.stroke(); return; }
+                            c.fillStyle = '#c62828'; c.beginPath(); c.arc(p.x, p.y - R * 0.62, R * 0.3, 0, Math.PI * 2); c.fill();
+                            c.fillStyle = '#fff'; c.font = `700 ${R * 0.36}px system-ui, sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(j), p.x, p.y - R * 0.61); });
+                    }
+                }
                 if (fp && fp.mode !== 'art' && byId.get(fp.id)?.tile && byId.get(fp.tid)?.tile) {
                     const a = cen(byId.get(fp.id).tile), t = cen(byId.get(fp.tid).tile);
                     c.strokeStyle = '#c62828'; c.lineWidth = R * 0.2; c.lineCap = 'round';
@@ -4012,6 +4041,29 @@
                 }
                 c.restore();
             }
+            // Orientation redessinée par-dessus les étiquettes : vers l'est ou l'ouest, l'étiquette (plus large que la tuile) cachait la pointe ;
+            // la pointe dépasse alors du bord de l'étiquette.
+            if (LAND.view.b) {
+                c.save();
+                for (const u of LAND.units) {
+                    if (!u.tile || u.orient == null) continue;
+                    if (LAND.pressHide && u.id !== LAND.pressHide) continue;
+                    const [cc, rr] = keyToHex(u.tile);
+                    const o = hexCenter(cc, rr), ang = u.orient * Math.PI / 3;
+                    const side = u.orient === 0 || u.orient === 3;
+                    const reach = side && (byTile.get(u.tile) || []).length === 1 ? Math.max(R * 0.86, unitW / 2 + R * 0.32) : R * 0.86;
+                    const sz = R * (side ? 0.46 : 0.4);
+                    const tip = { x: o.x + Math.cos(ang) * reach, y: o.y + Math.sin(ang) * reach };
+                    c.beginPath();
+                    c.moveTo(tip.x, tip.y);
+                    c.lineTo(tip.x + Math.cos(ang + 2.55) * sz, tip.y + Math.sin(ang + 2.55) * sz);
+                    c.lineTo(tip.x + Math.cos(ang - 2.55) * sz, tip.y + Math.sin(ang - 2.55) * sz);
+                    c.closePath();
+                    c.fillStyle = TEAM_COL[u.team] || '#555'; c.fill();
+                    c.lineWidth = R * 0.06; c.strokeStyle = '#fff'; c.stroke();
+                }
+                c.restore();
+            }
         }
 
         function tokenAt(sx, sy) {
@@ -4242,6 +4294,15 @@
                 const px = e.clientX - rect.left;
                 const py = e.clientY - rect.top;
                 if (px >= cv.x && px <= cv.x + cv.w && py >= cv.y && py <= cv.y + cv.h) {
+                    if (LAND.view.phase === 'orders' && ciEq(unit.owner, meName())) {
+                        // Pose des ordres : toucher le chevron d'une de mes unités la désigne pour mvt +3 / charge +2 (mvt +3 par défaut si aucun ordre du général).
+                        e.stopImmediatePropagation();
+                        e.preventDefault();
+                        const cur = LAND.view.b?.gorders?.[myKey()];
+                        const go = cur === 'charge' ? 'charge' : 'mvt';
+                        landEmit('battle-gorder', { order: go, unit: unit.id }).then((r) => { if (r.success) toast(`Chevron : ${go === 'mvt' ? 'mvt +3' : 'charge +2'} pour ${unitLbl(unit)}.`); });
+                        return;
+                    }
                     if (!open) {
                         e.stopImmediatePropagation();
                         e.preventDefault();
@@ -4732,6 +4793,7 @@
             const col = (t) => TEAM_COL[t] || '#555';
             const lbl = (id) => { const u = LAND.units.find((x) => x.id === id); return u ? `${unitLbl(u)} <small>(${u.owner})</small>` : '?'; };
             let h = '';
+            if (m.queue.length) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="cwopen">📋 Détail des charges (${m.queue.filter((x) => x.res).length}/${m.queue.length})</button></div>`;
             if (m.step === 'charge') {
                 h += '<p class="lp-hint">⚔️ <b>Charges</b> — de la plus proche à la plus lointaine (dé en cas d’égalité). L’unité doit finir contre sa cible ; la cible se tourne vers elle.</p>';
                 h += '<div class="bat-log" style="max-height:none">' + m.queue.map((x, i) => {
@@ -5058,7 +5120,7 @@
                 const f = v.f;
                 if (f.step === 'art' || f.step === 'tir') {
                     const what = f.step === 'art' ? '💥 Artillerie' : '🏹 Tirs';
-                    if (f.pending) txt = `${what} : ${state.isAdmin ? 'vérifiez les modificateurs puis lancez les dés' : 'le MJ lance les dés'}`;
+                    if (f.pending) txt = `${what} : ${canRoll(LAND.units.find((u) => u.id === f.pending.id)?.owner) ? 'vérifiez les modificateurs puis lancez les dés' : (v.test?.on ? 'le MJ lance les dés (mode test)' : 'le tireur lance les dés')}`;
                     else txt = (f.actors || []).length && !state.isAdmin ? `${what} : à vous de viser (panneau ⚔️)` : `${what} : au tour de ${teamName(f.active)}`;
                 } else txt = f.step === 'flee' ? '🏳️ Jets de fuite' : '✅ Tirs terminés';
             } else if (v.phase === 'orders' && v.b && v.myTeam) {
@@ -5091,20 +5153,38 @@
             else if (k === 'okpend') validatePend();
         });
 
+        // MJ en mode test : bandeau toujours visible en haut de la carte, avec le joueur incarné (toucher : ouvrir le panneau pour en changer).
+        function setTestAs(n) {
+            LAND.asPlayer = n;
+            request('mj-test-as', { name: n }).then((r) => { if (!r.success) toast(r.message || 'Action impossible.', true); else toast(n ? `Mode test : vous jouez ${n}.` : 'Mode test : vous êtes le MJ (arbitre).'); });
+            updateLandingUI(); updateBatUI(); requestDraw();
+        }
+        function renderTestBanner() {
+            let el2 = document.getElementById('testBanner');
+            const on = state.isAdmin && landOn() && LAND.view?.test?.on;
+            if (!on) { if (el2) el2.hidden = true; return; }
+            if (!el2) { el2 = document.createElement('button'); el2.id = 'testBanner'; el2.dataset.land = 'testbanner'; document.body.appendChild(el2); }
+            const v = LAND.view, team = LAND.asPlayer ? (v.players || []).find((p) => ciEq(p.name, LAND.asPlayer))?.team : null;
+            el2.innerHTML = `🧪 TEST — vous jouez : <b>${LAND.asPlayer ? String(LAND.asPlayer).replace(/[<>&]/g, '') : 'MJ (arbitre)'}</b>${team ? ` <small>(${String(v.teamNames?.[team] || team).replace(/[<>&]/g, '')})</small>` : ''} ▾`;
+            el2.style.borderColor = team ? (TEAM_COL[team] || '#7b1fa2') : '#7b1fa2';
+            el2.hidden = false;
+        }
         function renderLandingPanel() {
             const panel = $('landingPanel');
             const v = LAND.view;
+            renderTestBanner();
             if (!landOn() || !LAND.open) { panel.hidden = true; return; }
-            const admin = state.isAdmin;
+            const admin = state.isAdmin && !(testOn() && LAND.asPlayer); // MJ qui incarne un joueur : panneau du joueur
             let h = `<div class="lp-head"><b>⚔️ Débarquement</b><span class="lp-phase">${PHASE_NAME[v.phase] || ''}</span><button class="lp-x" data-land="help" aria-label="Rappel des actions" title="Rappel des actions">ℹ️</button><button class="lp-x" data-land="close" aria-label="Fermer">✕</button></div>`;
+            // Mode « test et correction » (toutes les phases) : le MJ choisit le joueur qu'il incarne ; à la fin il garde l'état ou revient au début du test.
+            if (state.isAdmin && v.phase !== 'off') {
+                if (v.test?.on) {
+                    const esc2 = (n) => String(n).replace(/[<>&"]/g, '');
+                    h += `<div class="fire-box" style="border-color:#7b1fa2"><h4>🧪 Mode test et correction — vous jouez : <span style="color:#7b1fa2">${LAND.asPlayer ? esc2(LAND.asPlayer) : 'MJ (arbitre)'}</span></h4><div class="bat-row">Jouer en tant que : <button class="lp-seg ${LAND.asPlayer ? '' : 'on'}" data-land="asplayer" data-n="">MJ (arbitre)</button>${(v.test.players || []).map((n) => `<button class="lp-seg ${LAND.asPlayer === n ? 'on' : ''}" data-land="asplayer" data-n="${esc2(n)}">${esc2(n)}</button>`).join('')}</div>`;
+                    h += '<p class="lp-hint">Vous voyez et agissez comme le joueur choisi ; c’est vous qui lancez tous les dés. Terminer le test :</p><div class="lp-actions"><button class="btn btn-primary" data-land="testoff" data-keep="1">✔ Garder l’état actuel</button><button class="btn btn-dark" data-land="testoff" data-keep="0">↩️ Revenir au début du test</button></div></div>';
+                } else h += '<div class="lp-actions"><button class="btn btn-dark" data-land="teston">🧪 Mode test et correction</button></div>';
+            } else if (v.test?.on) h += '<p class="lp-hint">🧪 Le MJ est en mode test et correction.</p>';
             if (v.phase === 'bplace' || v.phase === 'orders' || v.phase === 'move' || v.phase === 'fire') {
-                if (admin) {
-                    // Mode « test et correction » : le MJ joue pour tous les joueurs et lance les dés ; à la fin il garde l'état ou revient au début du test.
-                    if (v.test?.on) {
-                        h += `<div class="fire-box" style="border-color:#7b1fa2"><h4>🧪 Mode test et correction (MJ)</h4><div class="bat-row">Jouer en tant que : ${(v.test.players || []).map((n) => `<button class="lp-seg ${LAND.asPlayer === n ? 'on' : ''}" data-land="asplayer" data-n="${String(n).replace(/"/g, '')}">${String(n).replace(/[<>&"]/g, '')}</button>`).join('')}</div>`;
-                        h += '<p class="lp-hint">Vous agissez pour le joueur choisi (et vous lancez tous les dés). Terminer le test :</p><div class="lp-actions"><button class="btn btn-primary" data-land="testoff" data-keep="1">✔ Garder l’état actuel</button><button class="btn btn-dark" data-land="testoff" data-keep="0">↩️ Revenir au début du test</button></div></div>';
-                    } else h += '<div class="lp-actions"><button class="btn btn-dark" data-land="teston">🧪 Mode test et correction</button></div>';
-                } else if (v.test?.on) h += '<p class="lp-hint">🧪 Le MJ est en mode test et correction.</p>';
                 h += battlePanelHtml();
                 if (admin) h += '<div class="lp-actions"><button class="btn btn-dark" data-land="back">◀ Étape précédente</button></div>';
             } else if (admin) {
@@ -5518,14 +5598,33 @@
             }
             el.style.left = `${Math.max(m, best[0])}px`; el.style.top = `${Math.max(m, best[1])}px`;
         }
-        function makeDraggable(el, handle) {
-            if (handle.dataset.drag) return;
-            handle.dataset.drag = '1';
-            let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
-            handle.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; on = true; sx = e.clientX; sy = e.clientY; const r = el.getBoundingClientRect(); ox = r.left; oy = r.top; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
-            handle.addEventListener('pointermove', (e) => { if (!on) return; el.style.left = `${Math.min(window.innerWidth - 40, Math.max(-el.offsetWidth + 60, ox + e.clientX - sx))}px`; el.style.top = `${Math.min(window.innerHeight - 30, Math.max(0, oy + e.clientY - sy))}px`; el.dataset.moved = '1'; });
-            handle.addEventListener('pointerup', () => { on = false; });
-        }
+        // Fenêtres déplaçables (panneau ⚔️, fenêtres de tir, dés, détail des charges) : on les prend par leur barre de titre,
+        // à la souris comme au doigt. Écoute au niveau du document : le contenu peut être redessiné pendant le déplacement.
+        function makeDraggable() { /* délégation : voir ci-dessous */ }
+        (function enableWinDrag() {
+            let drag = null;
+            document.addEventListener('pointerdown', (e) => {
+                const h = e.target.closest('.lp-head, .fw-head');
+                if (!h || e.target.closest('button, input, select, a, label')) return;
+                const el = h.closest('.landing-panel, .floatwin, #diceAnim');
+                if (!el) return;
+                const r = el.getBoundingClientRect();
+                if (el.classList.contains('landing-panel')) { el.style.width = `${r.width}px`; el.style.right = 'auto'; el.style.maxWidth = 'none'; }
+                el.style.left = `${r.left}px`; el.style.top = `${r.top}px`; el.style.bottom = 'auto';
+                drag = { el, dx: e.clientX - r.left, dy: e.clientY - r.top };
+                e.preventDefault(); e.stopPropagation();
+            }, true);
+            window.addEventListener('pointermove', (e) => {
+                if (!drag) return;
+                const { el } = drag;
+                el.style.left = `${Math.min(window.innerWidth - 60, Math.max(-el.offsetWidth + 80, e.clientX - drag.dx))}px`;
+                el.style.top = `${Math.min(window.innerHeight - 30, Math.max(0, e.clientY - drag.dy))}px`;
+                el.dataset.moved = '1';
+                e.preventDefault();
+            }, { passive: false });
+            const stop = () => { drag = null; };
+            window.addEventListener('pointerup', stop); window.addEventListener('pointercancel', stop);
+        })();
         function floatWin(id, title, html, opt = {}) {
             let w = document.getElementById(id);
             if (!w) { w = document.createElement('div'); w.id = id; w.className = 'floatwin'; document.body.appendChild(w); }
@@ -5562,6 +5661,62 @@
                 return;
             }
             hideFloatWin('fireWin');
+        }
+        // Détail des charges : navigation pas à pas (◀ ▶) dans toutes les charges du tour, trajet affiché sur la carte, « Revoir » rejoue l'avancée.
+        const SAVE_LBL = { hill: '⛰️ colline +1', forest: '🌲 forêt +2', build: '🏰 construction +2', bridge: '🌉 sortie de pont +2', vs: '🪽 vol stationnaire' };
+        function chargeDetailHtml(x, i, q) {
+            const b = LAND.view.b || {}, m = LAND.view.m;
+            const U = (id) => LAND.units.find((u) => u.id === id);
+            const L = (id) => { const u = U(id); return u ? `<b>${unitLbl(u)}</b> <small>(${String(u.owner).replace(/[<>&]/g, '')})</small>` : '?'; };
+            const st = x.res ? { contact: '✔ au contact', mutual: '⇄ charge mutuelle jouée', second: '🛡️ deuxième rideau', failed: '❌ échouée', none: '⛔ restée en place' }[x.res.kind] || '✔ jouée' : (i === m.qi && m.step === 'charge' ? '▶ en cours' : '• en attente');
+            let h = `<div class="bat-row"><b>Charge ${i + 1} / ${q.length}</b> · ${st}</div>`;
+            h += `<p style="margin:4px 0">${L(x.id)} ${x.mutual ? '⇄' : '➜'} ${L(x.target)}</p>`;
+            const facts = [`📏 ${x.dist} hex par le trajet${x.tie ? ` · 🎲 départage ${x.tie}` : ''}`];
+            for (const id of x.mutual ? [x.id, x.target] : [x.id]) {
+                const o = b.orders?.[id]; if (!o) continue;
+                const who = x.mutual ? `${unitLbl(U(id) || {})} : ` : '';
+                const f = [];
+                f.push(o.seen === false ? `🙈 sans voir${o.why ? ` (${o.why})` : ''} : sauvegarde de la cible +4` : '👁️ cible vue');
+                if (o.rear) f.push('↩️ prise à revers : −2 pour la cible');
+                if (o.save?.length) f.push('Marqueurs de la cible : ' + o.save.map((k) => SAVE_LBL[k] || k).join(', '));
+                if (o.cav) f.push('🐎 charge de cavalerie : att ×2');
+                if (o.failed) f.push('❌ hors de portée à la révélation');
+                if (o.second) f.push('🛡️ deuxième rideau : soutien, ne combat pas');
+                facts.push(who + f.join(' · '));
+            }
+            if (x.mutual && x.plan) facts.push(x.plan.none ? 'Aucun trajet entre les deux unités' : `${x.plan.n} tuile(s) entre elles${x.plan.roll ? ` · 🎲 ${x.plan.roll.a}/${x.plan.roll.b}` : ''}${x.plan.choice?.bridge ? ' · pont : pas de modificateur de pont' : ''}`);
+            h += facts.map((t) => `<p class="lp-hint" style="margin:2px 0">${t}</p>`).join('');
+            if (x.res) h += `<p style="margin:6px 0 2px"><b>Résultat :</b> ${String(x.res.text).replace(/[<>&]/g, '')}</p>` + x.res.units.map((r) => `<p class="lp-hint" style="margin:0">${unitLbl(U(r.id) || {})} : ${Math.max(0, (r.path || []).length - 1)} tuile(s) parcourue(s)</p>`).join('');
+            return h;
+        }
+        function renderChargeWin() {
+            const v = LAND.view, q = v.m?.queue || [];
+            if (!LAND.cw?.open || v.phase !== 'move' || !q.length) return hideFloatWin('chargeWin');
+            const i = Math.max(0, Math.min(q.length - 1, LAND.cw.sel || 0)); LAND.cw.sel = i;
+            const x = q[i];
+            let h = `<div class="bat-row" style="justify-content:space-between"><button class="lp-seg" data-land="cwstep" data-d="-1" ${i ? '' : 'disabled'}>◀ Précédente</button><button class="lp-seg" data-land="cwplay" ${x.res ? '' : 'disabled'}>▶ Revoir</button><button class="lp-seg" data-land="cwstep" data-d="1" ${i < q.length - 1 ? '' : 'disabled'}>Suivante ▶</button></div>`;
+            h += chargeDetailHtml(x, i, q);
+            h += '<div class="bat-log" style="max-height:24vh;margin-top:6px">' + q.map((y, j) => { const u = LAND.units.find((z) => z.id === y.id), t = LAND.units.find((z) => z.id === y.target); return `<div class="bat-row" data-land="cwgo" data-i="${j}" style="cursor:pointer;${j === i ? 'font-weight:700;background:#fff3c4' : ''}">${y.res ? '✔' : (j === v.m.qi && v.m.step === 'charge' ? '▶' : '•')} ${j + 1}. ${u ? unitLbl(u) : '?'} ${y.mutual ? '⇄' : '➜'} ${t ? unitLbl(t) : '?'}</div>`; }).join('') + '</div>';
+            if (q.some((y) => y.res)) h += '<div class="lp-actions"><button class="lp-seg" data-land="cwall">▶▶ Revoir toutes les charges jouées</button></div>';
+            const tiles = [x.id, x.target].map((id) => LAND.units.find((u) => u.id === id)?.tile).filter(Boolean);
+            floatWin('chargeWin', '📋 Détail des charges', h, { key: 'cw' + LAND.cw.n, tiles, onClose: () => { LAND.cw.open = false; requestDraw(); } });
+        }
+        function replayCharge(i, start) {
+            const x = LAND.view.m?.queue?.[i];
+            if (!x?.res) return 0;
+            const t0 = start ?? Date.now();
+            LAND.moveAnims = LAND.moveAnims.filter((a) => !x.res.units.some((r) => r.id === a.id));
+            let longest = 1;
+            for (const r of x.res.units) { const path = r.path?.length ? r.path : [r.from, r.to]; longest = Math.max(longest, path.length); LAND.moveAnims.push({ id: r.id, path, start: t0 }); }
+            tickMoveAnims();
+            return longest * ANIM_STEP + 300;
+        }
+        function replayAllCharges() {
+            const q = LAND.view.m?.queue || [];
+            // Chaque charge jouée est rejouée dans l'ordre ; une unité attend sur sa tuile de départ jusqu'à sa charge.
+            let t = Date.now();
+            q.forEach((x, i) => { if (x.res) t += replayCharge(i, t); });
+            LAND.cw.sel = q.findIndex((x) => x.res); renderChargeWin(); requestDraw();
         }
         function hideFloatWin(id) { const w = document.getElementById(id); if (w) w.hidden = true; }
         function showDiceAnim(a) {
@@ -5649,16 +5804,22 @@
             let t0 = Math.max(Date.now(), ...LAND.moveAnims.map((a) => a.start + a.path.length * ANIM_STEP));
             for (const g of [...groups.keys()].sort((a, b) => a - b)) {
                 let longest = 1;
-                for (const u of groups.get(g)) { const path = hexPathC(prevPos.get(u.id), u.tile); longest = Math.max(longest, path.length); LAND.moveAnims.push({ id: u.id, path, start: t0 }); }
+                for (const u of groups.get(g)) {
+                    const known = q.map((x) => x.res?.units?.find((r) => r.id === u.id && r.to === u.tile && r.from === prevPos.get(u.id))).find(Boolean);
+                    const path = known?.path?.length ? known.path : hexPathC(prevPos.get(u.id), u.tile);
+                    longest = Math.max(longest, path.length); LAND.moveAnims.push({ id: u.id, path, start: t0 });
+                }
                 t0 += longest * ANIM_STEP + 200;
             }
             tickMoveAnims();
         }
+        function syncTestAs(v) { if (!state.isAdmin) return; if (!v?.test?.on) LAND.asPlayer = null; else if ('as' in (v.test || {})) LAND.asPlayer = v.test.as || null; }
         function onLandingView(next) {
             const prevPos = new Map((LAND.units || []).map((u) => [u.id, (LAND.moveAnims || []).find((a) => a.id === u.id)?.path.slice(-1)[0] ?? u.tile]));
             const prev = LAND.view.phase;
             if ((next?.phase || 'off') !== prev) resetLandTransient();
             LAND.view = next || { phase: 'off' };
+            syncTestAs(LAND.view);
             if (LAND.simOn && !simAvail()) { LAND.simOn = false; SIM_LOCK = false; const bn = document.getElementById('simBanner'); if (bn) bn.hidden = true; }
             LAND.units = buildUnits(LAND.view);
             applyMoveAnims();
@@ -5678,6 +5839,7 @@
             checkDiceAnim(LAND.view);
             checkUndeposited(LAND.view);
             renderFireWin();
+            renderChargeWin();
             startMoveAnims(prevPos, prev);
         }
 
@@ -5692,12 +5854,18 @@
             else if (k === 'mskip') landEmit('move-skip', { unit: b.dataset.u });
             else if (k === 'teston' && state.isAdmin) landEmit('mj-test', { on: true }).then((r) => { if (r.success) { LAND.asPlayer = null; toast('Mode test et correction : choisissez le joueur pour qui vous jouez.'); } });
             else if (k === 'testoff' && state.isAdmin) landEmit('mj-test', { on: false, keep: b.dataset.keep === '1' }).then((r) => { if (r.success) { LAND.asPlayer = null; toast(b.dataset.keep === '1' ? 'Fin du test : état conservé.' : 'Fin du test : retour à l’état du début.'); } });
-            else if (k === 'asplayer' && state.isAdmin) { LAND.asPlayer = b.dataset.n; updateLandingUI(); updateBatUI(); requestDraw(); }
+            else if (k === 'asplayer' && state.isAdmin) setTestAs(b.dataset.n || null);
+            else if (k === 'testbanner') { LAND.open = true; updateLandingUI(); }
             else if (k === 'mundo' && state.isAdmin) landEmit('move-undo', {});
             else if (k === 'mend' && state.isAdmin) landEmit('move-end', {});
             else if (k === 'ffire' && state.isAdmin) adminNext();
             else if (k === 'faim') aimDialog(b.dataset.u);
             else if (k === 'fskip') landEmit('fire-skip', { unit: b.dataset.u });
+            else if (k === 'cwopen') { const q = LAND.view.m?.queue || []; const done = q.map((x, i) => (x.res ? i : -1)).filter((i) => i >= 0); LAND.cw = { open: true, sel: done.length ? done[done.length - 1] : 0, n: (LAND.cw?.n || 0) + 1 }; renderChargeWin(); requestDraw(); }
+            else if (k === 'cwgo') { LAND.cw.sel = Number(b.dataset.i); renderChargeWin(); requestDraw(); }
+            else if (k === 'cwstep') { const q = LAND.view.m?.queue || []; LAND.cw.sel = Math.max(0, Math.min(q.length - 1, LAND.cw.sel + Number(b.dataset.d))); renderChargeWin(); requestDraw(); }
+            else if (k === 'cwplay') replayCharge(LAND.cw.sel);
+            else if (k === 'cwall') replayAllCharges();
             else if (k === 'fcancel') landEmit('fire-cancel', {});
             else if (k === 'fmod' && state.isAdmin) landEmit('fire-mod', { k: b.dataset.k, on: b.checked });
             else if (k === 'fadj' && state.isAdmin) landEmit('fire-mod', { adj: (LAND.view.f?.pending?.adj || 0) + Number(b.dataset.d) });

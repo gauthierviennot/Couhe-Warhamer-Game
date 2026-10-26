@@ -45,12 +45,9 @@ mark{background:var(--mark);color:inherit;border-radius:2px}mark.cur{background:
 <main id="doc">
 <details class="l1"><summary><span class="t">Modifications récentes</span><span class="n"></span></summary><div class="c">
 <p class="small">Version du 26/10/2026 — même contenu que REGLES-COMPLETES.pdf.</p>
-<p class="li"><b>Règles générales § 1 — « Qui joue quoi »</b> (nouveau) : chaque joueur ne gère que ses unités (sa légion et ses mercenaires) ; les joueurs lancent leurs dés ; fenêtre de résolution des tirs ; jets visibles de tous (miniature si non concerné) ; fenêtres déplaçables et fermables, ouvertes loin du combat ; mode « test et correction » du MJ (conserver l’état ou revenir à l’état initial).</p>
-<p class="li"><b>§ 3</b> : mercenaires (infanterie légère, sans bonus d’armée, sans étendard, avec les pouvoirs du général).</p>
-<p class="li"><b>§ 4</b> : au placement, aucune unité (volantes comprises) ne s’arrête dans un village simple.</p>
-<p class="li"><b>§ 7</b> : chaque charge résolue est montrée à tous (l’unité avance jusqu’au front) ; résolution automatique s’il n’y a qu’une tuile d’arrivée possible.</p>
-<p class="li"><b>§ 9 et Annexe A § 1</b> (vision) : une tuile touchée par le trait, même par un coin, compte comme traversée (une montagne frôlée bloque la vue).</p>
-<p class="li"><b>Annexe E § 1</b> (tir) : fenêtre de résolution, dés lancés par le joueur qui tire (par le MJ en mode test).</p>
+<p class="li"><b>§ 1 — Qui joue quoi</b> : le mode test du MJ vaut pour toutes les phases ; le MJ choisit le joueur qu’il incarne (ou « MJ arbitre ») et un bandeau en haut de la carte indique le joueur joué.</p>
+<p class="li"><b>§ 5</b> : l’unité qui reçoit mvt +3 / charge +2 se désigne en touchant son chevron ; flèche rouge de l’unité qui charge vers sa cible.</p>
+<p class="li"><b>§ 7</b> : bouton « Détail des charges » pour suivre toutes les charges pas à pas (trajet sur la carte, « Revoir »).</p>
 </div></details>
 <details class="l1"><summary><span class="t">Règles générales — du début de partie à la charge</span><span class="n"></span></summary><div class="c">
 <details class="l2"><summary><span class="t">1. Vue d’ensemble</span><span class="n"></span></summary><div class="c">
@@ -61,6 +58,7 @@ mark{background:var(--mark);color:inherit;border-radius:2px}mark.cur{background:
 <p class="li"><b>Tous les joueurs voient les jets de dés</b> : en grand pour les joueurs concernés, en miniature pour les autres.</p>
 <p class="li">Les fenêtres sur la carte (résultats, tirs, dés) s’ouvrent <b>le plus loin possible de la zone de combat</b> ; on peut les déplacer et les fermer.</p>
 <p class="li"><b>Mode « test et correction » du MJ</b> : le MJ peut agir pour tous les joueurs, lui compris, et c’est lui qui lance les dés. À la sortie de ce mode, il choisit de <b>conserver l’état</b> obtenu ou de <b>revenir à l’état</b> du moment où il l’a activé.</p>
+<p class="li"><b>Le mode test vaut pour toutes les phases</b> (choix des zones, dépôt, placement, ordres, déplacements, tirs). Le MJ choisit le joueur qu’il incarne (ou « MJ arbitre », qui voit tout) : il voit alors le jeu comme ce joueur, et un <b>bandeau en haut de la carte</b> indique en permanence le joueur joué.</p>
 </div></details>
 </div></details>
 <details class="l2"><summary><span class="t">2. Préparation</span><span class="n"></span></summary><div class="c">
@@ -325,7 +323,8 @@ mark{background:var(--mark);color:inherit;border-radius:2px}mark.cur{background:
 
 <p class="li"><b>Unité volante (v, vs) :</b> à chaque ordre, « en vol » (par défaut) ou « au sol », pour tout le tour (vision, déplacement, combat). Ce choix est caché à l’adversaire.</p>
 <p class="li"><b>Ordre du général</b> (un seul, pour le tour ; visible des joueurs de son équipe, caché à l’adversaire jusqu’à la révélation) : <b>mvt +3</b> (déplacement ou marche forcée) ou <b>charge +2</b> pour une unité désignée à portée, la sienne comprise ; ou <b>att −1</b> pour toutes les unités à portée. Portée 6 hex, 9 pour l’Empire. Plus de pouvoir si l’unité du général est détruite (Annexe C).</p>
-<p class="li"><b>Charge :</b> le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.</p>
+<p class="li">L’unité qui reçoit <b>mvt +3</b> ou <b>charge +2</b> se désigne en <b>touchant son chevron</b> (sur la carte), ou par « Changer d’unité » dans le panneau ; on peut en changer jusqu’à la validation des ordres.</p>
+<p class="li"><b>Charge :</b> sur la carte, une <b>flèche rouge</b> va de l’unité qui charge vers sa cible. Le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.</p>
 <p class="li"><b>Portée réelle :</b> pour un déplacement ou une marche forcée, la carte montre les tuiles atteignables (trajet, terrain, obstacles).</p>
 </div></details>
 <details class="l2"><summary><span class="t">6. La révélation des ordres</span><span class="n"></span></summary><div class="c">
@@ -338,6 +337,7 @@ mark{background:var(--mark);color:inherit;border-radius:2px}mark.cur{background:
 <p class="li">Trajet : chaque tuile compte pour 1 ; en charge, forêt et marais n’ont pas de modificateur de déplacement (ils comptent comme une tuile) ; on ne traverse aucune unité (sauf vol en vol et saut ; on peut passer sous une unité volante en vol) ; sans chemin libre à la révélation, la charge traverse et devient sans voir.</p>
 <p class="li">Arrivée : au contact, sur la <b>facette de la charge</b> (la plus proche, puis les autres facettes de la charge, puis étalement en surnombre) ; toutes prises : <b>deuxième rideau</b> (soutien sans combat).</p>
 <p class="li">Charges mutuelles : toujours au contact ; le décor au plus fort modificateur fixe la ligne de front, sinon au milieu.</p>
+<p class="li"><b>Détail des charges</b> : pendant les déplacements, le bouton « Détail des charges » permet de suivre toutes les charges <b>pas à pas</b> (précédente / suivante) : distance, vision, prise à revers, marqueurs, résultat, trajet affiché sur la carte, et « Revoir » pour rejouer l’avancée.</p>
 <p class="li"><b>Chaque charge résolue est montrée à tous</b> : on voit l’unité avancer tuile par tuile jusqu’au front, une charge après l’autre. Quand une seule tuile d’arrivée est possible, la charge se résout d’elle-même ; sinon le joueur choisit la tuile.</p>
 <p class="li">Détail complet : Annexe B.</p>
 </div></details>

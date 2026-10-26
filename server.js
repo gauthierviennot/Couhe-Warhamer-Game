@@ -404,7 +404,7 @@ function normalizeLanding(raw) {
             const rm = raw.m;
             const okId = (x) => typeof x === 'string' && x in out.placed;
             const mm = { step: ['charge', 'move', 'done'].includes(rm.step) ? rm.step : 'move', qi: Math.max(0, Math.min(5000, Math.floor(Number(rm.qi) || 0))), active: TEAM_IDS.includes(rm.active) ? rm.active : null,
-                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)), ...(x.failed === true ? { failed: true } : {}),
+                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)), ...(x.failed === true ? { failed: true } : {}), ...(x.res && typeof x.res === 'object' && JSON.stringify(x.res).length < 8000 ? { res: JSON.parse(JSON.stringify(x.res)) } : {}),
                     ...(x.mutual === true ? { mutual: true, ...(x.plan && typeof x.plan === 'object' && JSON.stringify(x.plan).length < 20000 && (x.plan.none || Array.isArray(x.plan.path)) ? { plan: JSON.parse(JSON.stringify(x.plan)) } : {}) } : {}) })),
                 moved: {}, stack: [], snap: { pos: {}, orient: {} },
                 ...(rm.roll && Number.isInteger(rm.roll.t1) && Number.isInteger(rm.roll.t2) && TEAM_IDS.includes(rm.first) ? { roll: { t1: rm.roll.t1, t2: rm.roll.t2 }, first: rm.first } : {}) };
@@ -1410,14 +1410,16 @@ const zoneById = (id) => state.landing.zones.find((z) => z.id === id);
 // de l'autre équipe restent cachés jusqu'au verrouillage, y compris pour le MJ s'il joue dans une équipe.
 function landingViewFor(socket) {
     const L = state.landing;
-    const name = socket.data.name;
     const admin = Boolean(socket.data.isAdmin);
-    const base = { phase: L.phase, admin, teamNames: { ...state.fichesTeams.names }, test: { on: Boolean(L.test?.on), ...(admin && L.test?.on ? { players: Object.keys(L.roster || {}) } : {}) } };
+    // MJ en mode test : il voit le jeu comme le joueur qu'il incarne (ses unités, sa zone, son équipe).
+    const testAs = admin && L.test?.on && socket.data.testAs ? socket.data.testAs : null;
+    const name = testAs || socket.data.name;
+    const base = { phase: L.phase, admin, teamNames: { ...state.fichesTeams.names }, test: { on: Boolean(L.test?.on), ...(admin && L.test?.on ? { players: testPlayers(), as: socket.data.testAs || null } : {}) } };
     if (L.phase === 'off') return base;
 
     const teamOf = (n) => state.fichesTeams.members[keyOf(state.fichesTeams.members, n) ?? ''] ?? null;
     const players = Object.keys(state.fichesTeams.members).filter((n) => state.fichesTeams.members[n]);
-    const myTeam = name && !(admin && L.test?.on) ? teamOfName(name) : null; // MJ en mode test : il voit tout, comme un arbitre
+    const myTeam = name && !(admin && L.test?.on && !testAs) ? teamOfName(name) : null; // MJ en mode test sans joueur choisi : il voit tout, comme un arbitre
     const myGroup = myTeam ? groupOfTeam(myTeam) : null;
     const everything = ['locked', 'bplace', 'orders', 'move', 'fire'].includes(L.phase) || (admin && !myTeam); // un MJ sans équipe arbitre et voit tout
     const sees = (n) => everything || (myTeam && teamOf(n) === myTeam);
@@ -1503,7 +1505,7 @@ function landingViewFor(socket) {
             if (L.phase === 'move' && L.m) {
                 const m = L.m;
                 view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length,
-                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.failed ? { failed: true } : {}), ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit, ...(x.plan.choice.cancel ? { cancel: true, tie: x.plan.choice.tie } : {}), ...(x.plan.choice.bridge ? { bridge: true, tie: x.plan.choice.tie } : {}) } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
+                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.res ? { res: x.res } : {}), ...(x.failed ? { failed: true } : {}), ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit, ...(x.plan.choice.cancel ? { cancel: true, tie: x.plan.choice.tie } : {}), ...(x.plan.choice.bridge ? { bridge: true, tie: x.plan.choice.tie } : {}) } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
                 const cur = m.step === 'charge' ? m.queue[m.qi] : null;
                 const actors = m.step === 'charge' ? (cur ? allBattleUnits().filter((u) => u.id === (cur.mutual && cur.plan?.choice ? cur.plan.choice.unit : cur.id)) : []) : (m.step === 'move' ? eligibleMovers().filter((u) => u.team === m.active) : []);
                 for (const u of actors) {
@@ -2413,6 +2415,7 @@ function enterCharge() {
                 if (tiles.length) return;
             }
             battleLog(`⛔ ${unitLabel(u)} : aucune tuile libre pour avancer, elle reste en place.`);
+            chargeRecord(it, 'none', `${unitLabel(u)} : aucune tuile libre pour avancer, elle reste en place.`, u ? [{ id: u.id, from: unitPos(u.id), to: unitPos(u.id), path: [unitPos(u.id)] }] : []);
         }
         m.qi++;
     }
@@ -2456,6 +2459,9 @@ function doMove(u, tile, orient) {
         const fin = mutualResolve(it, tile);
         const setPos = (x, t) => { if (t === L.placed[x.id]) delete L.b.pos[x.id]; else L.b.pos[x.id] = t; };
         const startA = unitPos(A.id), startB = unitPos(B.id);
+        const pp = it.plan.path || [];
+        const seg = (from, to) => { const i = pp.indexOf(from), j = pp.indexOf(to); if (i < 0 || j < 0) return hexLine(from, to, [1e-6, 2e-6, -3e-6]); return i <= j ? pp.slice(i, j + 1) : pp.slice(j, i + 1).reverse(); };
+        const resUnits = [{ id: A.id, from: startA, to: fin.a, path: seg(startA, fin.a) }, { id: B.id, from: startB, to: fin.b, path: seg(startB, fin.b) }];
         setPos(A, fin.a); setPos(B, fin.b);
         // Marqueurs de sauvegarde recalculés seulement pour l'unité qui s'est déplacée (celle qui garde sa tuile protectrice garde ses marqueurs).
         for (const [X, Y, moved] of [[A, B, fin.b !== startB], [B, A, fin.a !== startA]]) {
@@ -2470,23 +2476,28 @@ function doMove(u, tile, orient) {
         L.b.orient[A.id] = facing(fin.a, fin.b); L.b.orient[B.id] = facing(fin.b, fin.a);
         m.moved[A.id] = true; m.moved[B.id] = true;
         battleLog(`⚔️ ${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' (pas de contact : portées insuffisantes)'}.`);
+        chargeRecord(it, it.plan.contact ? 'mutual' : 'failed', `${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' : pas de contact (portées insuffisantes)'}${it.plan.choice?.bridge ? ' (pont : un d10 a désigné le côté, pas de modificateur de pont)' : it.plan.choice ? ' (décor plus fort d’un côté : il fixe la ligne de front)' : ''}.`, resUnits);
         follow();
         advanceMove(u.team);
         return true;
     }
     const tid = it ? it.target : null;
     pushMoveUndo(u, tid);
+    const from0 = unitPos(u.id);
+    const route = it ? routeOf(u, from0, tile, true) : null;
     const moved = tile !== unitPos(u.id);
     if (tile === L.placed[u.id]) delete L.b.pos[u.id]; else L.b.pos[u.id] = tile;
     if (it?.failed) {
         L.b.orient[u.id] = facing(tile, unitPos(tid));
         battleLog(`❌ ${unitLabel(u)} : charge échouée, elle avance au maximum de sa capacité de charge vers sa cible.`);
+        chargeRecord(it, 'failed', `${unitLabel(u)} : charge échouée (cible hors de portée à la révélation) ; elle avance au maximum vers sa cible.`, [{ id: u.id, from: from0, to: tile, path: route }]);
     } else if (it && hexDistance(tile, unitPos(tid)) > 1) {
         // Toutes les tuiles au contact de la cible sont prises : deuxième rideau, l'unité ne combattra pas.
         L.b.orient[u.id] = facing(tile, unitPos(tid));
         L.b.orders[u.id].second = true;
         const tu = allBattleUnits().find((x) => x.id === tid);
         battleLog(`🛡️ ${unitLabel(u)} : toutes les tuiles au contact de ${unitLabel(tu)} sont prises ; elle s’avance au plus près, en deuxième rideau, et ne combattra pas.`);
+        chargeRecord(it, 'second', `${unitLabel(u)} : toutes les tuiles au contact de ${unitLabel(tu)} sont prises ; deuxième rideau (soutien, ne combat pas).`, [{ id: u.id, from: from0, to: tile, path: route }]);
     } else if (it) {
         const tp = unitPos(tid);
         L.b.orient[u.id] = facing(tile, tp);
@@ -2495,6 +2506,7 @@ function doMove(u, tile, orient) {
         if (!busy) L.b.orient[tid] = facing(tp, tile);
         const tu = allBattleUnits().find((x) => x.id === tid);
         battleLog(`⚔️ ${u.line.name} ${u.idx} charge ${tu ? `${tu.line.name} ${tu.idx}` : 'sa cible'}${moved ? '' : ' (déjà au contact)'}.`);
+        chargeRecord(it, 'contact', `${unitLabel(u)} charge ${tu ? unitLabel(tu) : 'sa cible'} et arrive au contact${moved ? '' : ' (elle y était déjà)'}${busy ? ' ; la cible, déjà au corps à corps, ne se retourne pas' : ' ; la cible se tourne vers elle'}.`, [{ id: u.id, from: from0, to: tile, path: route }]);
         follow();
     } else {
         const o = Number(orient);
@@ -2506,6 +2518,27 @@ function doMove(u, tile, orient) {
     return true;
 
 }
+// Trajet suivi par une unité de sa tuile vers la tuile d'arrivée (plus court chemin de charge ; sinon ligne droite, charge qui traverse).
+function routeOf(u, from, to, charge) {
+    if (!from || !to) return [];
+    if (from === to) return [from];
+    const dist = reachMap(u, 60, charge);
+    if (dist.has(to)) {
+        const path = [to];
+        let cur = to;
+        for (let guard = 0; cur !== from && guard < 80; guard++) {
+            const [c, r] = cur.split(',').map(Number);
+            const d = dist.get(cur);
+            const prev = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => dist.has(k) && dist.get(k) < d).sort((a, b) => dist.get(a) - dist.get(b))[0];
+            if (!prev) break;
+            path.unshift(prev); cur = prev;
+        }
+        if (path[0] === from) return path;
+    }
+    return hexLine(from, to, [1e-6, 2e-6, -3e-6]);
+}
+// Résultat d'une charge, conservé dans la file : détail des charges consultable pas à pas par tous.
+function chargeRecord(it, kind, text, units) { if (it) it.res = { kind, text: String(text).slice(0, 240), units: units.slice(0, 6) }; }
 function advanceMove(justPlayed) {
     const m = state.landing.m;
     if (m.step === 'charge') { m.qi++; enterCharge(); return; }
@@ -3041,8 +3074,14 @@ function releaseSession(s) {
 
 // Mode « test et correction » du MJ : il agit pour tous les joueurs (et lance leurs dés). Hors de ce mode, chacun ne gère que ses unités.
 const testMJ = (socket) => Boolean(socket.data.isAdmin && state.landing?.test?.on);
+// Joueurs que le MJ peut incarner en mode test : ceux qui ont des unités, et tous les joueurs des équipes (choix des zones, avant le dépôt).
+function testPlayers() {
+    const out = [];
+    for (const n of [...Object.keys(state.landing.roster || {}), ...Object.keys(state.fichesTeams.members || {}).filter((n) => state.fichesTeams.members[n])]) if (!out.some((x) => ci(x, n))) out.push(n);
+    return out;
+}
 function actorName(socket, payload) {
-    if (testMJ(socket) && typeof payload?.as === 'string' && keyOf(state.landing.roster || {}, payload.as)) return keyOf(state.landing.roster, payload.as);
+    if (testMJ(socket) && typeof payload?.as === 'string') { const n = testPlayers().find((x) => ci(x, payload.as)); if (n) return n; }
     const uid0 = typeof payload?.unit === 'string' ? payload.unit : (Array.isArray(payload?.units) ? String(payload.units[0] ?? '') : '');
     if (testMJ(socket) && uid0.includes('|')) { const o = uid0.slice(0, uid0.indexOf('|')); if (keyOf(state.landing.roster || {}, o)) return keyOf(state.landing.roster, o); }
     return socket.data.name;
@@ -3824,7 +3863,7 @@ io.on('connection', (socket) => {
 
     // Un joueur choisit sa zone parmi celles de son équipe.
     socket.on('landing-choose', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         const late = L.phase === 'place' && !keyOf(L.roster, name); // dépôt en cours : seul un joueur sans zone peut encore choisir
@@ -3978,7 +4017,7 @@ io.on('connection', (socket) => {
 
     // Étendards : le nombre d'unités d'une ligne qui en portent un est limité par la colonne E de la légion.
     socket.on('landing-standard', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'Les étendards s’attribuent pendant le dépôt des unités.');
@@ -4027,7 +4066,7 @@ io.on('connection', (socket) => {
 
     // Un joueur remet toutes ses unités à leur position de dépôt dans la simulation.
     socket.on('landing-sim-reset', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'La simulation se modifie pendant le dépôt des unités.');
@@ -4215,7 +4254,7 @@ io.on('connection', (socket) => {
 
     // Avant de confirmer une charge : prise à revers ? cible visible ?
     socket.on('battle-charge-check', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name || L.phase !== 'orders' || !L.b) return reply(ack, { success: false, message: 'Ce n’est pas la pose des ordres.' });
         const f = findLine(name, payload?.unit);
@@ -4414,6 +4453,7 @@ io.on('connection', (socket) => {
         if (!x.moved) delete m.moved[x.id];
         if (x.sight && L.b.orders[x.id]) { L.b.orders[x.id].seen = x.sight.seen; if (x.sight.why) L.b.orders[x.id].why = x.sight.why; else delete L.b.orders[x.id].why; }
         m.step = x.step; m.qi = x.qi; m.active = x.active;
+        for (let i = m.qi; i < m.queue.length; i++) delete m.queue[i].res; // charges annulées : leur détail disparaît
         if (L.b.orders[x.id]) delete L.b.orders[x.id].second;
         for (const fw of x.follow || []) { if (fw.pos) L.b.pos[fw.id] = fw.pos; else delete L.b.pos[fw.id]; if (fw.orient != null) L.b.orient[fw.id] = fw.orient; else delete L.b.orient[fw.id]; }
         battleLog('↩️ Dernière action annulée par le MJ.');
@@ -4700,9 +4740,20 @@ io.on('connection', (socket) => {
 
     // Retour à une étape précédente (les données déjà saisies sont conservées) ou arrêt complet.
     // Mode « test et correction » du MJ. Activation : on garde une copie de l'état. Désactivation : garder l'état actuel, ou revenir à la copie.
+    // MJ en mode test : joueur incarné (null = le MJ lui-même, arbitre qui voit tout).
+    socket.on('mj-test-as', (payload, ack) => {
+        if (!requireAdmin(socket, ack)) return;
+        if (!state.landing.test?.on) return landingFail(ack, 'Activez d’abord le mode test.');
+        const n = payload?.name == null ? null : testPlayers().find((x) => ci(x, payload.name));
+        if (payload?.name != null && !n) return landingFail(ack, 'Joueur inconnu.');
+        socket.data.testAs = n || null;
+        reply(ack, { success: true });
+        socket.emit('landing', landingViewFor(socket));
+    });
     socket.on('mj-test', (payload, ack) => {
         if (!requireAdmin(socket, ack)) return;
         const L = state.landing;
+        delete socket.data.testAs;
         if (payload?.on) {
             if (L.test?.on) return landingOk(ack);
             const { test, ...rest } = L;

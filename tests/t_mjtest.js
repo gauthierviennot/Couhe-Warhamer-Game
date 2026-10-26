@@ -48,6 +48,8 @@ setTimeout(async () => {
   r = await mj.call('mj-test', { on: true }); ok(r.success && L(mj).test.on, 'mode test et correction activé');
   r = await mj.call('battle-order', { unit: E, order: { type: 'depl' } }); ok(r.success && B.orders[E]?.type === 'depl', 'en mode test, le MJ donne l’ordre d’un joueur ' + (r.message || ''));
   r = await c.call('battle-order', { unit: E, order: { type: 'depl' } }); ok(!r.success, 'même en mode test du MJ, un joueur ne touche pas aux unités adverses');
+  r = await mj.call('mj-test-as', { name: 'cat' }); ok(r.success && L(mj).test.as === 'cat' && L(mj).myTeam === 't2', 'mode test : le MJ incarne cat, la vue est celle de son équipe');
+  r = await mj.call('mj-test-as', { name: null }); ok(r.success && !L(mj).test.as && !L(mj).myTeam, 'mode test : retour au MJ arbitre (voit tout)');
   r = await mj.call('mj-test', { on: false, keep: false });
   ok(r.success && !L(mj).test.on && !S.state.landing.b.orders[E], 'fin du test en revenant à l’état du début : l’ordre disparaît');
   await mj.call('mj-test', { on: true });

@@ -49,7 +49,8 @@ s+=B(['<b>Chaque joueur ne gère que ses propres unités</b> : celles de sa lég
  '<b>Les dés sont lancés par les joueurs</b> : le joueur concerné appuie sur « Jeter les dés » (l’outil tire et calcule). Le tir s’ouvre dans une <b>fenêtre de résolution</b> qui montre la cible, les modificateurs et le bouton « Jeter les dés ».',
  '<b>Tous les joueurs voient les jets de dés</b> : en grand pour les joueurs concernés, en miniature pour les autres.',
  'Les fenêtres sur la carte (résultats, tirs, dés) s’ouvrent <b>le plus loin possible de la zone de combat</b> ; on peut les déplacer et les fermer.',
- '<b>Mode « test et correction » du MJ</b> : le MJ peut agir pour tous les joueurs, lui compris, et c’est lui qui lance les dés. À la sortie de ce mode, il choisit de <b>conserver l’état</b> obtenu ou de <b>revenir à l’état</b> du moment où il l’a activé.'])
+ '<b>Mode « test et correction » du MJ</b> : le MJ peut agir pour tous les joueurs, lui compris, et c’est lui qui lance les dés. À la sortie de ce mode, il choisit de <b>conserver l’état</b> obtenu ou de <b>revenir à l’état</b> du moment où il l’a activé.',
+ '<b>Le mode test vaut pour toutes les phases</b> (choix des zones, dépôt, placement, ordres, déplacements, tirs). Le MJ choisit le joueur qu’il incarne (ou « MJ arbitre », qui voit tout) : il voit alors le jeu comme ce joueur, et un <b>bandeau en haut de la carte</b> indique en permanence le joueur joué.'])
 
 s.append(P('2. Préparation',h2))
 s+=B(['La carte (hexagones) : terrains (plaine, colline, montagne, route, eau, marais) et décors (forêt, pont, fortification, demi-fortification, village, village à toit plat, muret). <b>Les joueurs participent à l’élaboration de la carte</b> (terrains et décors), <b>sauf les marqueurs</b> (zones de débarquement, frontières, marqueurs +), réservés au MJ. Le terrain est figé pendant la bataille dès qu’un joueur a validé ses ordres (§ 5).',
@@ -102,7 +103,8 @@ s.append(box([['Ordre','Qui','Effet'],
 s.append(Spacer(1,4))
 s+=B(['<b>Unité volante (v, vs) :</b> à chaque ordre, « en vol » (par défaut) ou « au sol », pour tout le tour (vision, déplacement, combat). Ce choix est caché à l’adversaire.',
  '<b>Ordre du général</b> (un seul, pour le tour ; visible des joueurs de son équipe, caché à l’adversaire jusqu’à la révélation) : <b>mvt +3</b> (déplacement ou marche forcée) ou <b>charge +2</b> pour une unité désignée à portée, la sienne comprise ; ou <b>att −1</b> pour toutes les unités à portée. Portée 6 hex, 9 pour l’Empire. Plus de pouvoir si l’unité du général est détruite (REGLES-GENERAL).',
- '<b>Charge :</b> le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.',
+ 'L’unité qui reçoit <b>mvt +3</b> ou <b>charge +2</b> se désigne en <b>touchant son chevron</b> (sur la carte), ou par « Changer d’unité » dans le panneau ; on peut en changer jusqu’à la validation des ordres.',
+ '<b>Charge :</b> sur la carte, une <b>flèche rouge</b> va de l’unité qui charge vers sa cible. Le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.',
  '<b>Portée réelle :</b> pour un déplacement ou une marche forcée, la carte montre les tuiles atteignables (trajet, terrain, obstacles).'])
 
 s.append(P('6. La révélation des ordres',h2))
@@ -115,6 +117,7 @@ s+=B(['Toutes les charges sont jouées d’abord, dans une seule file, <b>de la 
  'Trajet : chaque tuile compte pour 1 ; en charge, forêt et marais n’ont pas de modificateur de déplacement (ils comptent comme une tuile) ; on ne traverse aucune unité (sauf vol en vol et saut ; on peut passer sous une unité volante en vol) ; sans chemin libre à la révélation, la charge traverse et devient sans voir.',
  'Arrivée : au contact, sur la <b>facette de la charge</b> (la plus proche, puis les autres facettes de la charge, puis étalement en surnombre) ; toutes prises : <b>deuxième rideau</b> (soutien sans combat).',
  'Charges mutuelles : toujours au contact ; le décor au plus fort modificateur fixe la ligne de front, sinon au milieu.',
+ '<b>Détail des charges</b> : pendant les déplacements, le bouton « Détail des charges » permet de suivre toutes les charges <b>pas à pas</b> (précédente / suivante) : distance, vision, prise à revers, marqueurs, résultat, trajet affiché sur la carte, et « Revoir » pour rejouer l’avancée.',
  '<b>Chaque charge résolue est montrée à tous</b> : on voit l’unité avancer tuile par tuile jusqu’au front, une charge après l’autre. Quand une seule tuile d’arrivée est possible, la charge se résout d’elle-même ; sinon le joueur choisit la tuile.',
  'Détail complet : REGLES-CHARGE.'])
 

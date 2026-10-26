@@ -56,19 +56,11 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>Règles générales § 1 — « Qui joue quoi »</b> (nouveau) : chaque joueur ne gère que ses unités (sa légion et ses mercenaires) ; les joueurs lancent leurs dés ; fenêtre de résolution des tirs ; jets visibles de tous (miniature si non concerné) ; fenêtres déplaçables et fermables, ouvertes loin du combat ; mode « test et correction » du MJ (conserver l’état ou revenir à l’état initial).',
-    '<b>§ 3</b> : mercenaires (infanterie légère, sans bonus d’armée, sans étendard, avec les pouvoirs du général).',
-    '<b>§ 4</b> : au placement, aucune unité (volantes comprises) ne s’arrête dans un village simple.',
-    '<b>§ 7</b> : chaque charge résolue est montrée à tous (l’unité avance jusqu’au front) ; résolution automatique s’il n’y a qu’une tuile d’arrivée possible.',
-    '<b>§ 9 et Annexe A § 1</b> (vision) : une tuile touchée par le trait, même par un coin, compte comme traversée (une montagne frôlée bloque la vue).',
-    '<b>Annexe E § 1</b> (tir) : fenêtre de résolution, dés lancés par le joueur qui tire (par le MJ en mode test).',
+    '<b>§ 1 — Qui joue quoi</b> : le mode test du MJ vaut pour toutes les phases ; le MJ choisit le joueur qu’il incarne (ou « MJ arbitre ») et un bandeau en haut de la carte indique le joueur joué.',
+    '<b>§ 5</b> : l’unité qui reçoit mvt +3 / charge +2 se désigne en touchant son chevron ; flèche rouge de l’unité qui charge vers sa cible.',
+    '<b>§ 7</b> : bouton « Détail des charges » pour suivre toutes les charges pas à pas (trajet sur la carte, « Revoir »).',
 ]
-NEEDLES = [
-    'Chaque joueur ne gère que ses propres unités', 'Les dés sont lancés par les joueurs', 'Tous les joueurs voient les jets de dés',
-    'le plus loin possible de la zone de combat', 'Mode « test et correction » du MJ', 'Qui joue quoi', '<b>Mercenaires :</b>',
-    'ni dans un village simple', 'Chaque charge résolue est montrée à tous', 'même par un coin', 'même par un seul coin',
-    'le joueur qui tire lance les dés',
-]
+NEEDLES = ['Le mode test vaut pour toutes les phases', 'Détail des charges</b> : pendant', 'en <b>touchant son chevron</b>', 'une <b>flèche rouge</b> va de']
 
 
 def hl_par(el):
@@ -109,7 +101,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (26/10/2026, 19 h 15)', h2))
+S.append(P('Modifications depuis le dernier envoi (26/10/2026, 20 h 35)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
