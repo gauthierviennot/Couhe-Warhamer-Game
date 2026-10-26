@@ -48,13 +48,14 @@ s.append(P('Qui joue quoi',h3))
 s+=B(['<b>Chaque joueur ne gère que ses propres unités</b> : celles de sa légion et les mercenaires que le MJ lui a attribués. Il ne peut ni placer, ni donner d’ordre, ni déplacer, ni faire tirer une unité d’un autre joueur, même de son équipe.',
  '<b>Les dés sont lancés par les joueurs</b> : le joueur concerné appuie sur « Jeter les dés » (l’outil tire et calcule). Le tir s’ouvre dans une <b>fenêtre de résolution</b> qui montre la cible, les modificateurs et le bouton « Jeter les dés ».',
  '<b>Tous les joueurs voient les jets de dés</b> : en grand pour les joueurs concernés, en miniature pour les autres.',
+ '<b>Étiquettes des unités</b> : seulement le <b>sigle</b> de la fiche (il, tmv…) et un <b>numéro unique</b> pour chaque joueur, jamais le nom de l’unité ; deux touchers sur l’étiquette ouvrent la fiche de l’armée ou de la légion, avec le nom.',
  'Les fenêtres sur la carte (résultats, tirs, dés) s’ouvrent <b>le plus loin possible de la zone de combat</b> ; on peut les déplacer et les fermer.',
  '<b>Mode « test et correction » du MJ</b> : le MJ peut agir pour tous les joueurs, lui compris, et c’est lui qui lance les dés. À la sortie de ce mode, il choisit de <b>conserver l’état</b> obtenu ou de <b>revenir à l’état</b> du moment où il l’a activé.',
  '<b>Le mode test vaut pour toutes les phases</b> (choix des zones, dépôt, placement, ordres, déplacements, tirs). Le MJ choisit le joueur qu’il incarne (ou « MJ arbitre », qui voit tout) : il voit alors le jeu comme ce joueur, et un <b>bandeau en haut de la carte</b> indique en permanence le joueur joué.'])
 
 s.append(P('2. Préparation',h2))
 s+=B(['La carte (hexagones) : terrains (plaine, colline, montagne, route, eau, marais) et décors (forêt, pont, fortification, demi-fortification, village, village à toit plat, muret). <b>Les joueurs participent à l’élaboration de la carte</b> (terrains et décors), <b>sauf les marqueurs</b> (zones de débarquement, frontières, marqueurs +), réservés au MJ. Le terrain est figé pendant la bataille dès qu’un joueur a validé ses ordres (§ 5).',
- 'Le MJ marque les <b>zones de débarquement</b> (losanges sur au moins 2 tuiles voisines ; triangles aux extrémités), les répartit en deux groupes et attribue chaque groupe à une équipe. Les <b>frontières</b> (disques, triangles hors zone) ne se franchissent pas au placement. Les <b>marqueurs +</b> délimitent les aires de bonus des sections de débarquement.',
+ 'Le MJ marque les <b>zones de débarquement</b> (losanges sur au moins 2 tuiles voisines ; triangles aux extrémités), les répartit en deux groupes et attribue chaque groupe à une équipe. Les <b>frontières</b> (disques, triangles hors zone) ne se franchissent pas au placement. Les <b>marqueurs +</b> délimitent les aires de bonus des sections de débarquement. <b>Une fois le placement de bataille terminé</b>, les disques et les marqueurs + ne sont plus affichés (ils restent enregistrés : ils réapparaissent si l’on revient au placement) ; les <b>triangles restent</b>, ils serviront à compter les points forts.',
  'Chaque joueur reçoit une armée et une légion (fiches d’armée). Une ligne de fiche donne : attaque, PV, armure, déplacement (dep), portée, mobilité (marche, vol, vol stationnaire, saut) et capacités entre parenthèses (aL, art, BA, ber, C, G, jump, mag, spe, T, v, vs, 2att…).'])
 s.append(P('Terrains',h3))
 s.append(box([['Terrain','Déplacement','Sauvegarde (cible)','Autres effets'],
@@ -64,7 +65,7 @@ s.append(box([['Terrain','Déplacement','Sauvegarde (cible)','Autres effets'],
  ['Marais','−1 (sauf vol ; en charge : compte comme une tuile)','—','—'],
  ['Montagne','infranchissable (sauf vol, saut), pas d’arrêt','—','Bloque toujours la vue'],
  ['Muret','—','+2','Annule C'],
- ['Pont','passage de la rivière','+2 (tir et corps à corps), cible à la sortie du pont','Annule C'],
+ ['Pont','passage de la rivière, seulement d’une extrémité à l’autre (tuile orientée)','+2 (tir et corps à corps), cible à la sortie du pont','Annule C'],
  ['Rivière','infranchissable sauf pont, vol, saut, Saurus (BA)','—','Saurus (BA) peuvent s’y arrêter'],
  ['Route','+2 si on y termine (sauf vol ; pas en charge)','—','—'],
  ['Village','on ne s’y tient pas (sauf toit plat)','+2 autour des maisons et sur toit plat','Annule C ; toit plat : niveau +1, vue à 360°']],[24*mm,48*mm,44*mm,58*mm]))
@@ -84,7 +85,7 @@ s.append(P('4. Premier tour : le placement',h2))
 s+=B(['Ce tour est un <b>placement</b>, pas un déplacement : les coûts de terrain ne comptent pas.',
  '<b>Secteurs :</b> deux sections de débarquement forment un même secteur quand les camps se font face (tuiles ou aires de bonus qui se touchent, ou qui bordent une même frontière). Dans un secteur disputé, un <b>d10</b> par équipe désigne celle qui place en premier, puis les équipes placent <b>une unité à tour de rôle</b>. Les secteurs séparés placent en même temps, sans dé.',
  '<b>Portée de placement :</b> en partant de la tuile de dépôt, qui compte pour 1 : dep − 1 tuiles autour d’elle ; plus le <b>bonus de section</b>, fixé par le MJ pour chaque section de débarquement (2 par défaut), seulement dans l’<b>aire de bonus</b> de la section ; plus <b>3 tuiles</b> pour l’unité au chevron.',
- 'On ne franchit pas une frontière ; on ne s’arrête ni sur une montagne, ni sur l’eau (sauf pont et Saurus BA), <b>ni dans un village simple</b> (toutes les unités, volantes comprises ; le village à toit plat est permis). <b>Pas de zone d’interdiction au placement</b> : une unité peut être placée au contact d’un adversaire.',
+ 'On ne franchit pas une frontière ; <b>on ne passe ni par l’eau ni par la montagne</b> (sauf unités volantes, unités qui sautent, et Saurus BA pour l’eau) ; un <b>pont</b> se franchit seulement d’une extrémité à l’autre. On ne s’arrête ni sur une montagne, ni sur l’eau (sauf pont et Saurus BA), <b>ni dans un village simple</b> (toutes les unités, volantes comprises ; le village à toit plat est permis). <b>Pas de zone d’interdiction au placement</b> : une unité peut être placée au contact d’un adversaire.',
  '<b>Une seule unité par tuile</b> à la fin du placement, tuiles de dépôt comprises : une unité peut rester sur sa tuile de dépôt seulement si aucune autre unité placée n’y reste. Le passage aux ordres est refusé tant qu’une tuile porte plusieurs unités.',
  'Le joueur choisit l’<b>orientation</b> puis valide : une unité validée ne bouge plus. Repositionnée avant validation, elle garde l’orientation choisie.',
  'Le placement de bataille se termine quand toutes les unités déposées sont placées ; le MJ passe aux ordres.'])
@@ -104,7 +105,7 @@ s.append(Spacer(1,4))
 s+=B(['<b>Unité volante (v, vs) :</b> à chaque ordre, « en vol » (par défaut) ou « au sol », pour tout le tour (vision, déplacement, combat). Ce choix est caché à l’adversaire.',
  '<b>Ordre du général</b> (un seul, pour le tour ; visible des joueurs de son équipe, caché à l’adversaire jusqu’à la révélation) : <b>mvt +3</b> (déplacement ou marche forcée) ou <b>charge +2</b> pour une unité désignée à portée, la sienne comprise ; ou <b>att −1</b> pour toutes les unités à portée. Portée 6 hex, 9 pour l’Empire. Plus de pouvoir si l’unité du général est détruite (REGLES-GENERAL).',
  'L’unité qui reçoit <b>mvt +3</b> ou <b>charge +2</b> se désigne en <b>touchant son chevron</b> (sur la carte), ou par « Changer d’unité » dans le panneau ; on peut en changer jusqu’à la validation des ordres.',
- '<b>Charge :</b> sur la carte, une <b>flèche rouge</b> va de l’unité qui charge vers sa cible. Le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.',
+ '<b>Charge :</b> sur la carte, une <b>flèche rouge</b> va de l’unité qui charge vers sa cible (ligne de vue), et le <b>cheminement prévu</b> à ce moment s’affiche en pointillés jusqu’à la tuile de contact (rond blanc). Pour un déplacement ou une marche forcée, le cheminement prévu jusqu’à la destination s’affiche de la même façon. Le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.',
  '<b>Portée réelle :</b> pour un déplacement ou une marche forcée, la carte montre les tuiles atteignables (trajet, terrain, obstacles).'])
 
 s.append(P('6. La révélation des ordres',h2))
@@ -117,15 +118,18 @@ s+=B(['Toutes les charges sont jouées d’abord, dans une seule file, <b>de la 
  'Trajet : chaque tuile compte pour 1 ; en charge, forêt et marais n’ont pas de modificateur de déplacement (ils comptent comme une tuile) ; on ne traverse aucune unité (sauf vol en vol et saut ; on peut passer sous une unité volante en vol) ; sans chemin libre à la révélation, la charge traverse et devient sans voir.',
  'Arrivée : au contact, sur la <b>facette de la charge</b> (la plus proche, puis les autres facettes de la charge, puis étalement en surnombre) ; toutes prises : <b>deuxième rideau</b> (soutien sans combat).',
  'Charges mutuelles : toujours au contact ; le décor au plus fort modificateur fixe la ligne de front, sinon au milieu.',
- '<b>Film des charges</b> : pendant les déplacements, le bouton « Détail des charges » remet les unités à leur <b>position d’origine</b> (avant les charges) et rejoue les charges <b>image par image</b> : une image = <b>un pas d’une tuile</b> (les deux unités d’une charge mutuelle avancent ensemble), une image pour les <b>jets de dés</b> rejoués à l’écran (départage, charge mutuelle, pont), une image pour l’arrivée et l’orientation. Boutons : début, charge précédente, image précédente, lecture / pause, image suivante, charge suivante, fin ; on peut s’arrêter sur chaque image. Pour chaque charge : distance, vision, prise à revers, marqueurs, résultat ; trajet en jaune sur la carte, tuiles numérotées. Fermer la fenêtre rend la carte réelle.',
+ '<b>Unité déjà chargée</b> par une charge jouée avant : sa charge simple n’a pas lieu (elle reste en place) ; dans une charge mutuelle, l’autre unité fait tout le trajet jusqu’à son contact.',
+ '<b>Film des charges et des déplacements</b> : pendant les déplacements, le bouton « Film des charges et des déplacements » remet les unités à leur <b>position d’origine</b> (avant les charges) et rejoue <b>image par image</b> toutes les charges puis tous les déplacements joués : une image = <b>un pas d’une tuile</b> (les deux unités d’une charge mutuelle avancent ensemble), une image pour les <b>jets de dés</b> rejoués à l’écran (départage, charge mutuelle, pont), une image pour l’arrivée et l’orientation. Boutons : début, bloc précédent, image précédente, lecture / pause, image suivante, bloc suivant, fin ; on peut s’arrêter sur chaque image et vérifier chaque trajet (en jaune sur la carte, tuiles numérotées). Fermer la fenêtre rend la carte réelle.',
  '<b>Chaque charge résolue est montrée à tous</b> : on voit l’unité avancer tuile par tuile jusqu’au front, une charge après l’autre. Quand une seule tuile d’arrivée est possible, la charge se résout d’elle-même ; sinon le joueur choisit la tuile.',
  'Détail complet : REGLES-CHARGE.'])
 
 s.append(P('8. Déplacements : les autres unités',h2))
 s+=B(['Après les charges, un <b>d10</b> par équipe (nouveau à chaque tour) désigne l’équipe qui commence ; puis les équipes déplacent leurs unités à tour de rôle.',
+ '<b>Pont</b> (tuile orientée) : une unité au sol n’y entre et n’en sort que par ses deux extrémités, d’une rive à l’autre, jamais par le côté (en déplacement comme en charge).',
  'Trajet réel : coût 1 par tuile ; forêt et marais −1 (sauf vol ; pas de surcoût en forêt pour les Elfes sylvains BA) ; route +2 si on y termine (sauf vol) ; montagne et eau selon le tableau des terrains ; une unité adverse barre le passage (sauf vol en vol et saut) ; une unité au sol peut passer sous une unité volante en vol, sans s’arrêter sur sa tuile ; la cavalerie ne monte pas sur une fortification.',
  '<b>Zone d’interdiction :</b> on ne s’arrête pas au contact d’un adversaire, sauf en charge, ou s’il y a une différence de hauteur entre les deux unités (colline, fortification, village à toit plat).',
- 'Une unité avec un ordre de déplacement peut ne pas bouger.'])
+ 'Une unité avec un ordre de déplacement peut ne pas bouger.',
+ '<b>Capacité de déplacement d’une unité</b> (amie ou adverse) : un appui long sur elle montre les tuiles qu’elle peut atteindre <b>depuis sa position actuelle</b> (jamais la portée du tour de placement) ; le choix secret « en vol / au sol » d’une unité adverse n’est pas révélé.'])
 
 s.append(P('Modificateurs de la cible (tir et corps à corps)',h3))
 s.append(box([['Modificateur','Valeur'],

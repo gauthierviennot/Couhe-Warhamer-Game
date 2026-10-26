@@ -65,13 +65,15 @@ s.append(P('5. Ordre des charges',h2))
 s+=B(['Les charges sont jouées <b>avant tous les autres déplacements</b>, dans une seule file, <b>de la plus courte à la plus longue</b> (tuiles sur le vrai trajet jusqu’au contact).',
  '<b>Égalité de distance :</b> un d10 par charge (relancé en cas d’égalité) ; la plus haute part en premier.',
  'Une charge mutuelle (§ 8) n’occupe qu’une place dans la file. Les charges échouées sont jouées aussi (l’unité avance au maximum, § 4).',
- 'À son tour, le joueur de l’unité (ou le MJ) choisit la tuile d’arrivée parmi les tuiles vertes proposées.'])
+ 'À son tour, le joueur de l’unité (ou le MJ) choisit la tuile d’arrivée parmi les tuiles vertes proposées.',
+ '<b>Unité déjà chargée :</b> une unité qui a déjà été chargée par une charge jouée avant la sienne (charge arrivée à son contact, ou charge mutuelle) est prise au corps à corps : <b>sa propre charge simple n’a pas lieu</b>, elle reste en place.'])
 s.append(P('6. Le chemin autorisé',h2))
 s+=B(['Chaque tuile compte pour 1. En charge, <b>forêt et marais n’ont pas de modificateur de déplacement</b> : ils comptent comme une tuile ; la route ne donne pas de bonus.',
  '<b>Unités au sol, grandes tailles, unités volantes au sol :</b> elles ne traversent <b>aucune unité, amie ou ennemie</b> ; elles contournent, par le chemin le plus court. S’il n’existe aucun chemin libre, elles traversent les unités sur leur passage (charge sans voir, fixée à la révélation).',
  '<b>Sous une unité volante en vol :</b> une unité au sol peut passer sous une unité volante en vol (amie ou ennemie), mais ne peut pas s’arrêter sur sa tuile.',
  '<b>Unités volantes en vol et unités qui sautent :</b> elles passent au-dessus des unités (sans gain de vision pour celles qui sautent).',
  '<b>Montagnes :</b> survolées en vol, franchies en saut ; infranchissables pour les autres.',
+ '<b>Pont :</b> le pont est une tuile <b>orientée</b> qui relie les deux rives. Une unité au sol n’y entre et n’en sort que par ses <b>deux extrémités</b>, d’une rive à l’autre ; jamais par le côté (depuis la rive ou depuis l’eau).',
  '<b>Eau :</b> seulement par un pont, sauf unités volantes en vol, unités qui sautent (sans s’y arrêter) et Saurus (BA), qui peuvent aussi s’y arrêter.',
  'La cavalerie ne s’arrête pas sur une fortification ou une demi-fortification.'])
 s.append(P('7. L’arrivée d’une charge simple',h2))
@@ -92,6 +94,7 @@ s+=B(['<b>Ligne de front par défaut : au milieu.</b> Chacune fait la moitié de
  '&nbsp;&nbsp;– Si l’une croise un modificateur plus fort que tout ce que croise l’autre, elle <b>peut s’arrêter</b> sur cette tuile (ou aller au milieu) ; l’autre <b>vient à son contact</b>, quelle que soit sa portée. Exemple : A croise une forêt (+2), B ne croise rien : A peut s’arrêter dans la forêt et B vient à son contact.',
  '&nbsp;&nbsp;– <b>Égalité</b> (même modificateur maximum des deux côtés, par exemple muret sur colline de chaque côté) : la charge se déroule <b>au milieu</b>.',
  '&nbsp;&nbsp;– <b>Pont</b> : si chaque unité est sur sa tuile d’entrée de pont, un seul <b>d10</b> (pas de dé de mi-chemin) désigne de quel côté du pont a lieu la charge (l’unité de ce côté garde sa tuile, l’autre traverse le pont pour venir au contact) ; le modificateur de pont ne s’applique à <b>aucune des deux unités</b>.',
+ '<b>Une des deux unités déjà chargée</b> (par une charge jouée avant) : elle reste en place, au corps à corps ; l’autre fait <b>l’intégralité du trajet</b> pour venir à son contact (comme une charge simple réussie, au-delà de sa portée si besoin). Les deux déjà chargées : la charge mutuelle n’a pas lieu.',
  'S’il n’existe aucun trajet, même à travers les unités, chacune reste en place.',
  'À l’arrivée, les deux unités se font face.'])
 s.append(box([['Modificateur de terrain d’une tuile','Valeur'],

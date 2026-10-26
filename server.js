@@ -404,12 +404,13 @@ function normalizeLanding(raw) {
             const rm = raw.m;
             const okId = (x) => typeof x === 'string' && x in out.placed;
             const mm = { step: ['charge', 'move', 'done'].includes(rm.step) ? rm.step : 'move', qi: Math.max(0, Math.min(5000, Math.floor(Number(rm.qi) || 0))), active: TEAM_IDS.includes(rm.active) ? rm.active : null,
-                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)), ...(x.failed === true ? { failed: true } : {}), ...(x.res && typeof x.res === 'object' && JSON.stringify(x.res).length < 8000 ? { res: JSON.parse(JSON.stringify(x.res)) } : {}),
+                queue: (Array.isArray(rm.queue) ? rm.queue : []).slice(0, 2000).filter((x) => x && okId(x.id) && typeof x.target === 'string').map((x) => ({ id: x.id, target: x.target.slice(0, 140), dist: Math.max(0, Math.floor(Number(x.dist) || 0)), tie: Math.max(0, Math.floor(Number(x.tie) || 0)), ...(x.failed === true ? { failed: true } : {}), ...(x.wasMutual === true ? { wasMutual: true } : {}), ...(x.orig && okId(x.orig.id) && typeof x.orig.target === 'string' ? { orig: { id: x.orig.id, target: x.orig.target.slice(0, 140), failed: x.orig.failed === true } } : {}), ...(x.res && typeof x.res === 'object' && JSON.stringify(x.res).length < 8000 ? { res: JSON.parse(JSON.stringify(x.res)) } : {}),
                     ...(x.mutual === true ? { mutual: true, ...(x.plan && typeof x.plan === 'object' && JSON.stringify(x.plan).length < 20000 && (x.plan.none || Array.isArray(x.plan.path)) ? { plan: JSON.parse(JSON.stringify(x.plan)) } : {}) } : {}) })),
                 moved: {}, stack: [], snap: { pos: {}, orient: {} },
                 ...(rm.roll && Number.isInteger(rm.roll.t1) && Number.isInteger(rm.roll.t2) && TEAM_IDS.includes(rm.first) ? { roll: { t1: rm.roll.t1, t2: rm.roll.t2 }, first: rm.first } : {}) };
             for (const [id, v] of Object.entries(rm.moved || {}).slice(0, 12000)) if (okId(id) && v === true) mm.moved[id] = true;
             for (const [id, t] of Object.entries(rm.snap?.pos || {}).slice(0, 12000)) if (okId(id) && /^\d{1,3},\d{1,3}$/.test(String(t))) mm.snap.pos[id] = t;
+            if (Array.isArray(rm.moves)) mm.moves = rm.moves.slice(0, 3000).filter((x) => x && okId(x.id) && Array.isArray(x.path) && x.path.length <= 80).map((x) => ({ id: x.id, from: String(x.from), to: String(x.to), path: x.path.map(String), orient: Number.isInteger(x.orient) ? x.orient : null }));
             for (const [id, o] of Object.entries(rm.snap?.orient || {}).slice(0, 12000)) if (okId(id) && Number.isInteger(o) && o >= 0 && o <= 5) mm.snap.orient[id] = o;
             mm.stack = (Array.isArray(rm.stack) ? rm.stack : []).slice(-300).filter((x) => x && okId(x.id)).map((x) => ({ id: x.id, pos: x.pos ?? null, orient: Number.isInteger(x.orient) ? x.orient : null, tid: typeof x.tid === 'string' ? x.tid : null, torient: Number.isInteger(x.torient) ? x.torient : null, step: x.step, qi: Math.floor(Number(x.qi) || 0), active: x.active ?? null, moved: x.moved === true, ...(x.sight && typeof x.sight === 'object' ? { sight: { seen: x.sight.seen === true, why: typeof x.sight.why === 'string' ? x.sight.why.slice(0, 30) : null } } : {}), ...(typeof x.tpos === 'string' ? { tpos: x.tpos } : {}), ...(x.mutual === true ? { mutual: true } : {}) }));
             out.m = mm;
@@ -1473,6 +1474,7 @@ function landingViewFor(socket) {
                 undeposited: allBattleUnits().filter((u) => !L.placed[u.id]).map((u) => ({ id: u.id, owner: u.owner, team: u.team, name: `${u.line.name} ${u.idx}` })) };
             for (const [id, o] of Object.entries(b.orders)) if (b.revealed || mineOrAdmin(id.slice(0, id.indexOf('|')))) view.b.orders[id] = o; // ordres retournés : visibles de tous
             view.b.given = Object.keys(b.orders); // tout le monde voit qu'une unité a reçu un ordre, sans savoir lequel
+            if (L.phase === 'orders') { const rts = orderRoutes(); view.b.routes = {}; for (const id of Object.keys(view.b.orders)) if (rts[id]) view.b.routes[id] = rts[id]; }
             for (const [n, g] of Object.entries(b.gorders)) if (mineOrAdmin(n)) view.b.gorders[n] = g;
             for (const [n, v] of Object.entries(b.ready)) if ((admin && !myTeam) || (myTeam && teamOf(n) === myTeam) || admin) view.b.ready[n] = v;
             // Pertes : figurines restantes / total pour les unités touchées, unités détruites.
@@ -1504,8 +1506,8 @@ function landingViewFor(socket) {
             }
             if (L.phase === 'move' && L.m) {
                 const m = L.m;
-                view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length, snap: m.snap || null,
-                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.res ? { res: x.res } : {}), ...(x.failed ? { failed: true } : {}), ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit, ...(x.plan.choice.cancel ? { cancel: true, tie: x.plan.choice.tie } : {}), ...(x.plan.choice.bridge ? { bridge: true, tie: x.plan.choice.tie } : {}) } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
+                view.m = { step: m.step, qi: m.qi, active: m.active, roll: m.roll || null, moved: { ...m.moved }, stackLen: m.stack.length, snap: m.snap || null, moves: m.moves || [],
+                    queue: m.queue.map((x) => ({ id: x.id, target: x.target, dist: x.dist, tie: x.tie, ...(x.res ? { res: x.res } : {}), ...(x.wasMutual ? { wasMutual: true } : {}), ...(x.failed ? { failed: true } : {}), ...(x.mutual ? { mutual: true, plan: x.plan ? { n: x.plan.n, contact: x.plan.contact, none: x.plan.none || false, roll: x.plan.roll || null, choice: x.plan.choice ? { unit: x.plan.choice.unit, ...(x.plan.choice.cancel ? { cancel: true, tie: x.plan.choice.tie } : {}), ...(x.plan.choice.bridge ? { bridge: true, tie: x.plan.choice.tie } : {}) } : null } : null } : {}) })), actors: [], allow: {}, left: eligibleMovers().length };
                 const cur = m.step === 'charge' ? m.queue[m.qi] : null;
                 const actors = m.step === 'charge' ? (cur ? allBattleUnits().filter((u) => u.id === (cur.mutual && cur.plan?.choice ? cur.plan.choice.unit : cur.id)) : []) : (m.step === 'move' ? eligibleMovers().filter((u) => u.team === m.active) : []);
                 for (const u of actors) {
@@ -1884,6 +1886,17 @@ function moveRange(u) {
 // Une unité volante (v, vs) choisit à chaque ordre « en vol » (par défaut) ou « au sol » ; au sol elle se déplace comme une unité au sol.
 const isFlier = (u) => { const k = String(u.line.kin || ''); return k === 'v' || k === 'vs'; };
 const flying = (u) => isFlier(u) && state.landing.b?.orders?.[u.id]?.air !== false;
+// Pont : tuile orientée et directionnelle. Une unité au sol n'y entre et n'en sort que par ses deux extrémités, dans l'axe du pont
+// (directions dir et dir + 3, dir = rotation du pont) ; on ne monte pas sur un pont par le côté depuis la rive ou depuis l'eau.
+function bridgeOk(a, b) {
+    for (const [t, o] of [[a, b], [b, a]]) {
+        const g = state.gridData[t];
+        if (g?.object !== 'bridge') continue;
+        const d = Number(g.dir) || 0;
+        if (o !== tileInDir(t, d) && o !== tileInDir(t, (d + 3) % 6)) return false;
+    }
+    return true;
+}
 function unitMob(u) {
     const k = String(u.line.kin || '');
     const fly = flying(u), jump = k === 'j';
@@ -1934,6 +1947,7 @@ function reachMap(u, limit, charge, through) {
                 if (ter === 'water' && obj !== 'bridge' && !mob.swim) continue;
             }
             if (mob.cav && (obj === 'fortress' || obj === 'fortress-half')) continue;
+            if (!mob.air && !mob.swim && !bridgeOk(key, nk)) continue; // pont : seulement par ses deux extrémités
             let cost = 1;
             if (!charge && !mob.fly) { if (obj === 'forest' && !mob.woods) cost++; if (ter === 'swamp') cost++; } // déplacement −1 en forêt et marais, sauf charge et vol
             const nd = d + cost;
@@ -1955,6 +1969,7 @@ function moveAllowed(u) {
     const order = L.b.orders[u.id];
     const tp = isCharge && order?.target ? unitPos(order.target) : null;
     if (isCharge && !tp) return [];
+    if (isCharge && cur?.wasMutual) return cur.id === u.id ? chargeTiles(u, unitPos(cur.target)).tiles : []; // ancienne charge mutuelle : vers l'unité déjà prise, toujours au contact
     if (isCharge) return cur && cur.id === u.id ? (cur.failed ? failedChargeTiles(u, tp) : chargeTiles(u, tp).tiles) : [];
     return stopTiles(u, moveRange(u), false, null, false);
 }
@@ -2278,6 +2293,7 @@ function chargePath(a, b, through) {
                     if (occ.has(nk)) continue;
                     if (!air && ter === 'mountain') continue;
                     if (ter === 'water' && g.object !== 'bridge' && !swim) continue;
+                    if (!air && !swim && !bridgeOk(k, nk)) continue; // pont : seulement par ses deux extrémités
                 }
                 prev.set(nk, k); next.push(nk);
             }
@@ -2394,24 +2410,60 @@ function startMoveStep() {
 }
 // Charge suivante de la file : la charge est obligatoire. Son succès a été décidé à la révélation des ordres (échouée : l'unité reste en place) ;
 // une charge réussie va au contact, ou au plus près en deuxième rideau si toutes les tuiles au contact de la cible sont prises.
+// Unité déjà prise au corps à corps par une charge jouée plus tôt dans la file (charge arrivée au contact sur elle, ou charge mutuelle).
+function chargeTaken(id, upto) {
+    const q = state.landing.m.queue;
+    for (let j = 0; j < upto; j++) {
+        const x = q[j], k = x.res?.kind;
+        if (k === 'contact' && x.target === id) return x;
+        if (k === 'mutual' && (x.id === id || x.target === id)) return x;
+    }
+    return null;
+}
 function enterCharge() {
     const L = state.landing, m = L.m;
     while (m.qi < m.queue.length) {
         const it = m.queue[m.qi];
+        const lbl = (id) => unitLabel(allBattleUnits().find((x) => x.id === id));
+        if (it.mutual && !it.plan) {
+            // Charge mutuelle dont une unité a déjà été chargée : l'autre fait tout le trajet pour venir contre elle (charge simple, toujours au contact).
+            const tA = chargeTaken(it.id, m.qi), tB = chargeTaken(it.target, m.qi);
+            if (tA && tB) {
+                battleLog(`⛔ ${lbl(it.id)} et ${lbl(it.target)} sont déjà prises au corps à corps : leur charge mutuelle n'a pas lieu.`);
+                chargeRecord(it, 'taken', `${lbl(it.id)} et ${lbl(it.target)} ont déjà été chargées par d'autres unités : la charge mutuelle n'a pas lieu, elles restent en place.`, [it.id, it.target].map((id) => ({ id, from: unitPos(id), to: unitPos(id), path: [unitPos(id)] })));
+                finishRecord(it); m.qi++; continue;
+            }
+            if (tA || tB) {
+                const engaged = tA ? it.id : it.target, free = tA ? it.target : it.id;
+                it.orig = { id: it.id, target: it.target, failed: Boolean(it.failed) };
+                it.mutual = false; it.wasMutual = true; it.id = free; it.target = engaged; delete it.failed; delete it.plan;
+                battleLog(`↪️ ${lbl(engaged)} est déjà prise au corps à corps : ${lbl(free)} fait tout le trajet pour venir à son contact.`);
+            }
+        }
+        if (!it.mutual) {
+            // Charge simple d'une unité déjà chargée par une autre : elle n'a pas lieu, l'unité reste en place (elle est au corps à corps).
+            const by = chargeTaken(it.id, m.qi);
+            if (by) {
+                const atk = by.id === it.id ? by.target : by.id;
+                battleLog(`⛔ ${lbl(it.id)} a déjà été chargée par ${lbl(atk)} : sa charge n'a pas lieu.`);
+                chargeRecord(it, 'taken', `${lbl(it.id)} a déjà été chargée par ${lbl(atk)} : sa charge n'a pas lieu, elle reste en place (au corps à corps).`, [{ id: it.id, from: unitPos(it.id), to: unitPos(it.id), path: [unitPos(it.id)] }]);
+                finishRecord(it); m.qi++; continue;
+            }
+        }
         if (it.mutual) {
             prepareMutual(it);
             if (!it.plan?.none) {
                 // Une seule issue possible : la charge se résout toute seule (les joueurs voient les unités avancer).
                 const actor = allBattleUnits().find((x) => x.id === (it.plan?.choice ? it.plan.choice.unit : it.id));
                 const tiles = actor ? moveAllowed(actor) : [];
-                if (actor && tiles.length === 1 && !L.m.manual) { doMove(actor, tiles[0]); return; }
+                if (actor && tiles.length === 1 && !L.m.manual && m.noAutoAt !== m.qi) { doMove(actor, tiles[0]); return; }
                 return;
             }
         } else {
             const u = allBattleUnits().find((x) => x.id === it.id);
             if (u && unitPos(u.id) && unitPos(it.target)) {
                 const tiles = moveAllowed(u);
-                if (tiles.length === 1 && !L.m.manual) { doMove(u, tiles[0]); return; }
+                if (tiles.length === 1 && !L.m.manual && m.noAutoAt !== m.qi) { doMove(u, tiles[0]); return; }
                 if (tiles.length) return;
             }
             battleLog(`⛔ ${unitLabel(u)} : aucune tuile libre pour avancer, elle reste en place.`);
@@ -2486,7 +2538,7 @@ function doMove(u, tile, orient) {
     const tid = it ? it.target : null;
     pushMoveUndo(u, tid);
     const from0 = unitPos(u.id);
-    const route = it ? routeOf(u, from0, tile, true) : null;
+    const route = routeOf(u, from0, tile, Boolean(it));
     const moved = tile !== unitPos(u.id);
     if (tile === L.placed[u.id]) delete L.b.pos[u.id]; else L.b.pos[u.id] = tile;
     if (it?.failed) {
@@ -2514,6 +2566,8 @@ function doMove(u, tile, orient) {
         const o = Number(orient);
         if (Number.isInteger(o) && o >= 0 && o <= 5) L.b.orient[u.id] = o;
         battleLog(`👣 ${u.line.name} ${u.idx} se déplace${moved ? '' : ' (reste en place)'}.`);
+        // Film des déplacements : trajet réel et orientation finale de chaque déplacement joué.
+        (m.moves = m.moves || []).push({ id: u.id, from: from0, to: tile, path: route, orient: L.b.orient[u.id] ?? null });
     }
     m.moved[u.id] = true;
     finishRecord(it);
@@ -2539,6 +2593,36 @@ function routeOf(u, from, to, charge) {
         if (path[0] === from) return path;
     }
     return hexLine(from, to, [1e-6, 2e-6, -3e-6]);
+}
+// Trajets prévus pendant la pose des ordres (charge : jusqu'à la tuile de contact prévue ; déplacement : jusqu'à la destination),
+// recalculés seulement quand les positions, les ordres ou le terrain changent.
+let routeMemo = { key: '', routes: {} };
+function orderRoutes() {
+    const L = state.landing, b = L.b;
+    if (!b || L.phase !== 'orders') return {};
+    const key = JSON.stringify([gridStamp, b.pos, b.orient, b.orders, L.chev, b.gorders]);
+    if (routeMemo.key === key) return routeMemo.routes;
+    const routes = {};
+    const all = allBattleUnits();
+    for (const u of all) {
+        const o = b.orders[u.id], from = unitPos(u.id);
+        if (!o || !from) continue;
+        try {
+            if (o.type === 'charge' && o.target) {
+                const T0 = all.find((x) => x.id === o.target);
+                const T = T0 ? chargeTargetOf(u, T0, true) : null;
+                const tp = T && unitPos(T.id);
+                if (!tp) continue;
+                const tiles = chargeTiles(u, tp).tiles;
+                if (!tiles.length) continue;
+                const dist = reachMap(u, 60, true);
+                const best = tiles.slice().sort((a, c) => (dist.get(a) ?? 99) - (dist.get(c) ?? 99))[0];
+                routes[u.id] = routeOf(u, from, best, true);
+            } else if ((o.type === 'depl' || o.type === 'marche') && o.tile && o.tile !== from) routes[u.id] = routeOf(u, from, o.tile, false);
+        } catch { /* trajet indisponible */ }
+    }
+    routeMemo = { key, routes };
+    return routes;
 }
 // Résultat d'une charge, conservé dans la file : détail des charges consultable pas à pas par tous.
 // Orientation de chaque unité concernée (et de la cible) après la charge : le film des charges les rejoue.
@@ -3153,7 +3237,9 @@ function replayBatch(grid, batch) {
 }
 
 // Applique une action sur des cases, sauvegarde, diffuse uniquement ce qui a changé et l'inscrit dans l'historique.
+let gridStamp = 0; // change à chaque modification du terrain (trajets prévus des ordres à recalculer)
 function applyEdits(keys, action, options, author) {
+    gridStamp++;
     const changes = {};
     const batch = [];
     for (const key of new Set(keys)) {
@@ -4297,6 +4383,21 @@ io.on('connection', (socket) => {
         reply(ack, { success: true, tiles: orderReach(u, payload?.type === 'marche' ? 'marche' : 'depl') });
     });
 
+    // Capacité de déplacement de n'importe quelle unité (amie ou adverse), depuis sa position actuelle : renseignement pour tous les joueurs
+    // (pendant les ordres, les déplacements et les tirs). Le choix secret « en vol / au sol » d'une unité adverse n'est pas utilisé.
+    socket.on('unit-reach', (payload, ack) => {
+        const L = state.landing;
+        if (!socket.data.name || !L.b || !['orders', 'move', 'fire'].includes(L.phase)) return reply(ack, { success: false, message: 'Pas de bataille en cours.' });
+        const u = allBattleUnits().find((x) => x.id === payload?.unit);
+        if (!u || !unitPos(u.id) || L.b.dead?.[u.id]) return reply(ack, { success: false, message: 'Unité absente du plateau.' });
+        const mine = testMJ(socket) || ci(u.owner, actorName(socket, payload) || '') || (u.team && u.team === teamOfName(socket.data.name));
+        const saved = L.b.orders[u.id];
+        if (!mine && !L.b.revealed && saved) L.b.orders[u.id] = { ...saved, air: undefined }; // choix « en vol / au sol » caché : valeur par défaut
+        try {
+            const dep = Math.max(0, u.line.dep);
+            reply(ack, { success: true, from: unitPos(u.id), dep, tiles: stopTiles(u, dep, false, null) });
+        } finally { if (saved) L.b.orders[u.id] = saved; }
+    });
     // Ordre du général : att (attaque −1 pour les unités à 6 hex), mvt (+3 hex), charge (+2 hex), ou null.
     socket.on('battle-gorder', (payload, ack) => {
         const name = actorName(socket, payload);
@@ -4463,11 +4564,17 @@ io.on('connection', (socket) => {
         }
         if (!x.moved) delete m.moved[x.id];
         if (x.sight && L.b.orders[x.id]) { L.b.orders[x.id].seen = x.sight.seen; if (x.sight.why) L.b.orders[x.id].why = x.sight.why; else delete L.b.orders[x.id].why; }
+        if (x.step === 'move' && m.moves?.length && m.moves[m.moves.length - 1].id === x.id) m.moves.pop(); // déplacement annulé : il sort du film
         m.step = x.step; m.qi = x.qi; m.active = x.active;
-        for (let i = m.qi; i < m.queue.length; i++) delete m.queue[i].res; // charges annulées : leur détail disparaît
+        for (let i = m.qi; i < m.queue.length; i++) {
+            const x = m.queue[i];
+            delete x.res; // charges annulées : leur détail disparaît
+            if (x.orig) { x.id = x.orig.id; x.target = x.orig.target; x.mutual = true; if (x.orig.failed) x.failed = true; delete x.orig; delete x.wasMutual; delete x.plan; } // charge mutuelle convertie : elle redevient mutuelle
+        }
         if (L.b.orders[x.id]) delete L.b.orders[x.id].second;
         for (const fw of x.follow || []) { if (fw.pos) L.b.pos[fw.id] = fw.pos; else delete L.b.pos[fw.id]; if (fw.orient != null) L.b.orient[fw.id] = fw.orient; else delete L.b.orient[fw.id]; }
         battleLog('↩️ Dernière action annulée par le MJ.');
+        m.noAutoAt = m.qi; // la charge annulée attend d'être rejouée à la main (pas de résolution automatique immédiate)
         if (m.step === 'charge') enterCharge();
         landingOk(ack);
     });
@@ -5085,4 +5192,4 @@ start().catch((err) => {
 });
 
 // Tests automatiques seulement (GAME_TEST=1) : accès direct à quelques fonctions de règle.
-if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
+if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };

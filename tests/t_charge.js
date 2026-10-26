@@ -121,6 +121,7 @@ setTimeout(async () => {
     T2([P(A1)], 'plain');
     const w1 = [], w2 = []; for (let x = 0; x <= 6; x++) w1.push(`${x},12`); for (let x = 7; x <= 13; x++) w2.push(`${x},11`);
     T2([...w1, ...w2], 'water'); O2(['3,12'], 'bridge'); O2(['10,11'], 'bridge');
+    for (const k of ['3,12', '10,11']) mj.listeners('rotate-object')[0]({ key: k, testForce: true }); // ponts orientés en travers de la rivière (rive nord ↔ rive sud)
     await __ready(b, L); await __ready(c, L);
     r = await mj.call('landing-move', { manual: true }); v = L(mj);
     console.log('file pont', JSON.stringify(v.m.queue.map((x) => ({ id: x.id.split('|')[1], d: x.dist }))));

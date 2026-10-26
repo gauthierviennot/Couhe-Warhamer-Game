@@ -55,6 +55,7 @@ Déroulement : 1er tour = placement (mêmes règles de portée que la simulation
 - 26/10 (22 h) : journal B49-B51 (fenêtres déplaçables, pas de plein écran sur ordinateur, chevron pendant les ordres, flèches de charge, détail des charges pas à pas, mode test dans toutes les phases avec bandeau du joueur incarné).
 - Banc d'essai navigateur (B53) : `node tests/navigateur/film.js` lance server.js avec le faux socket.io et ouvre index.html dans Chromium (playwright), relié par une passerelle ; `window.__landDebug` (units, view, openPanel, film) sert aux vérifications. Permet enfin de tester l'interface ici (captures dans tests/navigateur/shots/).
 - À faire au prochain envoi : bouton « 📖 Règles » à côté des onglets Armées / Formules / Équipes / Sauvegardes des fiches ; onglet Sauvegardes donnant accès aux sauvegardes des fiches, des cartes et des jeux en cours.
+- 26/10 (23 h) : ponts orientés (B54) ; unité déjà chargée (B55, `t_charge3.js`).
 
 ## 6. Questions encore ouvertes
 Tirs : choix faits par défaut, à confirmer en jouant — constructions +2 aussi au tir (le résumé du document dit « que cc », la section Terrains non) ; ordre de retrait des figurines dans les unités composées ; « moitié de l'unité » comptée sur les figurines de départ. À trancher avant le corps à corps : ordre de résolution des mêlées, qui choisit le report des blessures, débordement (déplacement guidé ou libre).

@@ -605,6 +605,13 @@
             { id: 'x', label: 'Croix en X' }
         ];
         const MARK_COLOR = '#e01b1b';
+        // Après le placement de bataille (ordres, déplacements, tirs) : les marqueurs de frontière (disques) et les marqueurs +
+        // des aires de bonus ne servent plus et ne sont plus dessinés. Ils restent enregistrés sur la carte : revenir au placement les fait réapparaître.
+        function battleMarksHidden() {
+            let v = null; try { v = LAND.view; } catch { return null; } // LAND pas encore créé au tout premier dessin
+            if (!v || !['orders', 'move', 'fire'].includes(v.phase)) return null;
+            return (tile) => tile.mark === 'disc' || tile.mark === 'cross'; // les triangles restent : ils servent ensuite à compter les points forts
+        }
 
         const OBJECT_BY_ID = new Map(OBJECTS.map((o) => [o.id, o]));
         const TERRAIN_BY_ID = new Map(TERRAINS.map((t) => [t.id, t]));
@@ -2423,7 +2430,7 @@
                     addHexPath(path, x, y);
                     if (withOutline) addHexPath(outline, x, y);
 
-                    if (withSymbols && (tile?.object || tile?.mark)) symbols.push({ x, y, tile });
+                    if (withSymbols && (tile?.object || tile?.mark)) symbols.push({ x, y, tile, key });
                 }
             }
 
@@ -2444,9 +2451,10 @@
                 c.stroke(outline);
             }
 
-            for (const { x, y, tile } of symbols) {
+            const hideM = battleMarksHidden();
+            for (const { x, y, tile, key } of symbols) {
                 if (tile.object) drawObject(c, tile.object, tile.dir ?? 0, x, y, HEX_RADIUS, rotation);
-                if (tile.mark) drawMark(c, x, y, tile.mark, rotation, Boolean(tile.object));
+                if (tile.mark && !(hideM && hideM(tile, key))) drawMark(c, x, y, tile.mark, rotation, Boolean(tile.object));
             }
 
             if (showGhosts) {
@@ -3115,7 +3123,13 @@
             const placed = v.placed || {};
             const std = new Set(v.std || []);
             const out = [];
+            // Numéro d'étiquette unique par joueur et par sigle : deux lignes de même type (ex. mage sur dragon et mage sur pégase, « tmv »)
+            // ne donnent plus deux « tmv 1 » : la seconde continue la numérotation (tmv 2…).
+            const lblOff = new Map();
             for (const l of v.lines || []) {
+                const lk = `${String(l.owner).toLowerCase()}|${sigleOf(l)}`;
+                const off = lblOff.get(lk) || 0;
+                lblOff.set(lk, off + l.qty);
                 const genId = v.gen?.[l.owner] ?? null;
                 const genTile = genId ? (v.b?.pos?.[genId] ?? placed[genId] ?? null) : null;
                 for (let i = 1; i <= l.qty; i++) {
@@ -3135,7 +3149,7 @@
                     if (v.b?.pos?.[id]) tile = v.b.pos[id];
                     const bpend = Boolean(LAND.pend && LAND.pend.unit === id);
                     if (bpend) tile = LAND.pend.tile;
-                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null, caps: l.caps || null, kin: l.kin || '',
+                    out.push({ id, home, simTile, orient: bpend ? LAND.pend.orient : (v.b?.orient?.[id] ?? null), bplaced: Boolean(v.b?.done?.[id]), bdone: v.phase === 'fire' ? true : v.phase === 'move' ? !(v.m?.actors || []).includes(id) : (Boolean(v.b?.done?.[id]) || (v.phase === 'bplace' && !(v.b?.actors || []).includes(id))), owner: l.owner, team: l.team, name: l.name, line: `${l.owner}|${l.uid}`, uid: l.uid, num: off + i, army: l.army, legion: l.legion, dep: l.dep, stdMax: l.stdMax, pv: l.pv, qty: l.qty, figs: l.figs, type: l.type, idx: i, tile, std: std.has(id), comp: l.comp || null, caps: l.caps || null, kin: l.kin || '',
                         multi: l.figs / Math.max(1, l.qty) > 1, gen: isGen, near, chev: v.chev?.[l.owner] === id, alive: v.b?.alive?.[id] ?? null });
                 }
             }
@@ -3193,6 +3207,8 @@
 
         const keyToHex = (key) => key.split(',').map(Number);
         const shortName = (t, n = 13) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+        // Sigle d'une unité sur son étiquette (jamais son nom) : le type de la fiche (il, tmv…) ; à défaut, les initiales du nom.
+        const sigleOf = (u) => u.type || String(u.name || '').replace(/\([^)]*\)/g, ' ').trim().split(/\s+/).filter(Boolean).map((w) => w[0].toLowerCase()).join('').slice(0, 5) || '?';
 
         const edgeKey = (a, b) => `${a}|${b}`;
 
@@ -3367,6 +3383,7 @@
                         if (nc < 0 || nr < 0 || nc >= state.cols || nr >= state.rows) continue;
                         const nk = `${nc},${nr}`;
                         if (dist.has(nk) || blockedTile(nk) || lim.edges.has(edgeKey(key, nk))) continue; // une frontière ne s'atteint ni ne se traverse
+                        if (!passC(unit, key, nk)) continue; // placement sans coût de terrain, mais pas à travers l'eau ni la montagne ; pont par ses extrémités
                         dist.set(nk, step);
                         next.push(nk);
                     }
@@ -3600,7 +3617,8 @@
                     if (o.target && len > R * 1.6) b = { x: b.x - Math.cos(ang) * R * 0.9, y: b.y - Math.sin(ang) * R * 0.9 };
                     c.strokeStyle = col; c.fillStyle = col; c.lineWidth = R * (o.type === 'charge' ? 0.16 : 0.12); c.lineCap = 'round';
                     c.setLineDash(o.type === 'charge' ? [] : o.type === 'tir' ? [R * 0.18, R * 0.14] : o.type === 'depl' ? [R * 0.35, R * 0.14] : [R * 0.1, R * 0.12]);
-                    c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
+                    const rtMove = LAND.view.phase === 'orders' && (o.type === 'depl' || o.type === 'marche') && (LAND.view.b.routes?.[id] || []).length > 1;
+                    if (!rtMove) { c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke(); } // déplacement : le cheminement remplace le trait droit
                     c.setLineDash([]);
                     const head = (x, y, sz) => {
                         c.beginPath();
@@ -3609,8 +3627,20 @@
                         c.lineTo(x - Math.cos(ang + 0.5) * sz, y - Math.sin(ang + 0.5) * sz);
                         c.closePath(); c.fillStyle = col; c.fill(); c.lineWidth = R * 0.05; c.strokeStyle = '#fff'; c.stroke();
                     };
-                    head(b.x, b.y, R * (o.type === 'charge' ? 0.75 : 0.5));
-                    if (o.type === 'charge' && len > R * 3) head((a.x + b.x) / 2 + Math.cos(ang) * R * 0.25, (a.y + b.y) / 2 + Math.sin(ang) * R * 0.25, R * 0.55); // flèche au milieu du trait
+                    if (!rtMove) head(b.x, b.y, R * (o.type === 'charge' ? 0.75 : 0.5));
+                    // Cheminement prévu à ce moment (pose des ordres) : charge jusqu'à la tuile de contact prévue, déplacement jusqu'à la destination.
+                    const rt = LAND.view.phase === 'orders' ? LAND.view.b.routes?.[id] : null;
+                    if (rt && rt.length > 1) {
+                        const pts = rt.map(cen);
+                        c.save();
+                        c.lineCap = 'round'; c.lineJoin = 'round';
+                        c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = R * 0.2; c.setLineDash([R * 0.22, R * 0.16]);
+                        c.beginPath(); pts.forEach((p, j) => (j ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y))); c.stroke();
+                        c.strokeStyle = col; c.lineWidth = R * 0.1; c.stroke();
+                        c.setLineDash([]);
+                        pts.slice(1).forEach((p, j) => { c.beginPath(); c.arc(p.x, p.y, R * (j === pts.length - 2 ? 0.26 : 0.13), 0, Math.PI * 2); c.fillStyle = j === pts.length - 2 ? '#fff' : col; c.fill(); c.lineWidth = R * 0.06; c.strokeStyle = col; c.stroke(); });
+                        c.restore();
+                    }
                 }
                 // Tir en préparation : trait épais du tireur vers sa cible, viseur sur la cible.
                 const fp = LAND.view.phase === 'fire' ? LAND.view.f?.pending : null;
@@ -3622,7 +3652,8 @@
                 };
                 if (fp && fp.mode === 'art' && fp.tile && byId.get(fp.id)?.tile) drawArt(byId.get(fp.id).tile, fp.tile, fp.three);
                 // Détail des charges : trajet de la charge choisie (départ cerclé, tuiles numérotées, arrivée), cible entourée.
-                const cwx = LAND.cw?.open && LAND.view.phase === 'move' && LAND.cw.sel >= 0 ? LAND.view.m?.queue?.[LAND.cw.sel] : null;
+                const cwx = LAND.cw?.open && LAND.view.phase === 'move' && LAND.cw.sel >= 0 ? LAND.view.m?.queue?.[LAND.cw.sel]
+                    : (LAND.cw?.open && LAND.cw.mv != null && LAND.view.m?.moves?.[LAND.cw.mv] ? (() => { const mv = LAND.view.m.moves[LAND.cw.mv]; return { id: mv.id, target: null, res: { units: [{ path: mv.path }] } }; })() : null);
                 if (cwx) {
                     const tgt = byId.get(cwx.target)?.tile;
                     if (tgt) { const t = cen(tgt); c.lineWidth = R * 0.14; c.strokeStyle = '#c62828'; c.setLineDash([R * 0.2, R * 0.12]); hexPathAt(c, t.x, t.y, R * 0.95); c.stroke(); c.setLineDash([]); }
@@ -3852,8 +3883,8 @@
                         c.fillStyle = '#1b1b1b';
                     }
                     // Le numéro de l'unité reste toujours visible : c'est le nom qui est raccourci si besoin.
-                    const num = ` ${u.idx}${u.alive && u.alive[0] < u.alive[1] ? `·${u.alive[0]}` : ''}`; // ·n = figurines restantes après des pertes
-                    let nm = u.type ? u.type : shortName(u.name, 12);
+                    const num = ` ${u.num ?? u.idx}${u.alive && u.alive[0] < u.alive[1] ? `·${u.alive[0]}` : ''}`; // ·n = figurines restantes après des pertes
+                    let nm = sigleOf(u); // jamais le nom de l'unité : double toucher sur l'étiquette pour la fiche
                     while (c.measureText(nm + num).width > textW && nm.length > 3) nm = `${nm.slice(0, -2)}…`;
                     c.fillText(nm + num, ox - w / 2 + leftPad, oy + chipH * 0.03);
                     // Ordre de l'unité : pastille au coin de l'étiquette. Mon équipe voit l'ordre ; l'équipe adverse voit seulement qu'un ordre a été donné (✉).
@@ -4190,12 +4221,28 @@
 
         function showPreview(unit) {
             if (!unit.tile) return toast('Cette unité n’est pas encore sur la carte.');
+            const battle = ['orders', 'move', 'fire'].includes(LAND.view.phase) && LAND.view.b;
+            if (battle && !(movMode() && LAND.view.m?.allow?.[unit.id])) {
+                // Pendant la bataille : capacité de déplacement réelle depuis la position actuelle (jamais la portée du tour de placement).
+                const at = unit.tile;
+                request('unit-reach', { unit: unit.id }).then((r) => {
+                    if (!r.success) return toast(r.message || 'Portée indisponible.', true);
+                    if (unit.tile !== at && LAND.units.find((x) => x.id === unit.id)?.tile !== r.from) return;
+                    const end = (r.tiles || []).filter((k) => k !== r.from);
+                    LAND.preview = { start: r.from, pass: [], end, bonusEnd: [], genEnd: [], total: end.length, dep: r.dep, unit };
+                    const info = $('rangeInfo');
+                    info.innerHTML = `<b>${unitLbl(unit)}</b> <small>(${String(unit.owner).replace(/[<>&]/g, '')})</small> · déplacement ${r.dep} depuis sa position actuelle : ${end.length} tuile(s) où s’arrêter`;
+                    info.hidden = false;
+                    requestDraw();
+                });
+                return;
+            }
             if (movMode()) {
                 const al = LAND.view.m?.allow?.[unit.id];
                 if (!al) { LAND.preview = null; hideRangeInfo(); requestDraw(); return; }
                 LAND.preview = { start: unit.tile, pass: [], end: al.filter((k) => k !== unit.tile || (LAND.view.m?.step === 'charge' && LAND.view.m.queue?.[LAND.view.m.qi]?.mutual)), bonusEnd: [], genEnd: [], total: al.length, dep: 0, unit };
                 const info = $('rangeInfo');
-                info.innerHTML = `<b>${shortName(unit.name, 22)}</b> ${unit.idx} · ${LAND.view.m.step === 'charge' ? 'tuiles de charge (contact avec la cible)' : 'tuiles où s’arrêter'} : ${al.length}`;
+                info.innerHTML = `<b>${unitLbl(unit)}</b> · ${LAND.view.m.step === 'charge' ? 'tuiles de charge (contact avec la cible)' : 'tuiles où s’arrêter'} : ${al.length}`;
                 info.hidden = false;
                 requestDraw();
                 return;
@@ -4288,7 +4335,7 @@
                 LAND.genMode = false;
                 renderUnitBar();
                 if (!unit.multi) { toast('Le général ne peut rejoindre qu’une unité de plusieurs figurines.', true); return; }
-                landEmit('landing-general', { unit: unit.id }).then((r) => { if (r.success) toast(`Général affecté à ${shortName(unit.name, 22)} ${unit.idx}.`); });
+                landEmit('landing-general', { unit: unit.id }).then((r) => { if (r.success) toast(`Général affecté à ${unitLbl(unit)}.`); });
                 return;
             }
             const cv = hit.chev;
@@ -4557,7 +4604,7 @@
         /* Bataille : placement à tour de rôle, orientation, ordres      */
         /* ============================================================ */
 
-        const unitLbl = (u) => `${u.type || shortName(u.name, 12)} ${u.idx}`;
+        const unitLbl = (u) => `${sigleOf(u)} ${u.num ?? u.idx}`;
         const myKey = () => Object.keys(LAND.view.gen || {}).find((k) => ciEq(k, meName())) ?? null;
 
         // Orientation proposée : face à l'unité adverse la plus proche (0 = est, puis de 60° en 60° dans le sens des aiguilles d'une montre).
@@ -4598,6 +4645,26 @@
             void home;
         }
 
+        // Passage d'une tuile à sa voisine (placement) : montagne seulement en vol ou en saut ; eau seulement par un pont (ou Saurus BA, vol, saut) ;
+        // pont = tuile orientée, on n'y entre et n'en sort que par ses deux extrémités (axe dir / dir + 3).
+        function bridgeOkC(a, b) {
+            for (const [t, o] of [[a, b], [b, a]]) {
+                const g = state.gridData[t];
+                if (g?.object !== 'bridge') continue;
+                const d = Number(g.dir) || 0, k = dirOf(t, o);
+                if (k !== d && k !== (d + 3) % 6) return false;
+            }
+            return true;
+        }
+        function passC(unit, a, b) {
+            const air = unit?.kin === 'v' || unit?.kin === 'vs' || unit?.kin === 'j';
+            if (air) return true;
+            const g = state.gridData[b] || {}, ter = g.terrain ?? 'plain';
+            if (ter === 'mountain') return false;
+            if (swimBA(unit)) return true;
+            if (ter === 'water' && g.object !== 'bridge') return false;
+            return bridgeOkC(a, b);
+        }
         // Bonus d'armée (BA) : seulement les unités dont le nom porte « BA » entre parenthèses ; Saurus BA = se tiennent sur l'eau.
         function hasBA(unit) { if (/\(merc\.\)/.test(String(unit?.name || ''))) return false; return (String(unit?.name || '').match(/\(([^)]*)\)/g) || []).some((g) => g.slice(1, -1).split(',').some((t) => t.trim().toLowerCase() === 'ba')); }
         function swimBA(unit) { return unit?.army === 'saurus' && hasBA(unit); }
@@ -4795,7 +4862,7 @@
             const col = (t) => TEAM_COL[t] || '#555';
             const lbl = (id) => { const u = LAND.units.find((x) => x.id === id); return u ? `${unitLbl(u)} <small>(${u.owner})</small>` : '?'; };
             let h = '';
-            if (m.queue.length) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="cwopen">📋 Détail des charges (${m.queue.filter((x) => x.res).length}/${m.queue.length})</button></div>`;
+            if (m.queue.length || (m.moves || []).length) h += `<div class="lp-actions"><button class="btn btn-dark" data-land="cwopen">🎬 Film des charges et des déplacements (${m.queue.filter((x) => x.res).length} charge(s), ${(m.moves || []).length} déplacement(s))</button></div>`;
             if (m.step === 'charge') {
                 h += '<p class="lp-hint">⚔️ <b>Charges</b> — de la plus proche à la plus lointaine (dé en cas d’égalité). L’unité doit finir contre sa cible ; la cible se tourne vers elle.</p>';
                 h += '<div class="bat-log" style="max-height:none">' + m.queue.map((x, i) => {
@@ -4838,7 +4905,10 @@
         function lblAny(id) {
             const m = /^(.*)\|(.*)#(\d+)$/.exec(String(id || ''));
             const l = m ? (LAND.view.lines || []).find((x) => x.owner === m[1] && x.uid === m[2]) : null;
-            return l ? `${l.type || shortName(l.name, 12)} ${m[3]} <small>(${l.owner})</small>` : '?';
+            if (!l) return '?';
+            // même numéro que l'étiquette de la carte (numérotation continue par sigle)
+            let off = 0; for (const x of LAND.view.lines || []) { if (x === l) break; if (ciEq(x.owner, l.owner) && sigleOf(x) === sigleOf(l)) off += x.qty; }
+            return `${sigleOf(l)} ${off + Number(m[3])} <small>(${l.owner})</small>`;
         }
         const figsTxt = (id) => { const a = LAND.view.b?.alive?.[id]; return a ? ` · ${a[0]}/${a[1]} fig.` : ''; };
         const FIRE_STEP = { art: '💥 Artillerie', tir: '🏹 Tirs', flee: '🏳️ Jets de fuite', done: '✅ Tirs terminés' };
@@ -5319,7 +5389,7 @@
             }).join('');
             // Unité fictive « Général » : à affecter à l'une de ses unités posées (plusieurs figurines) ; 2 tuiles de placement supplémentaires.
             const genUnit = units.find((u) => u.gen);
-            const genChip = `<div class="ub-chip ${genUnit ? 'done' : ''} ${LAND.genMode ? 'gen-on' : ''}" data-general="1" style="border-color:#c79100"><svg viewBox="0 0 20 20" width="16" height="16" style="vertical-align:-3px" fill="none" stroke="#c79100" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 L10 1 L17 7"/><path d="M3 13 L10 7 L17 13"/><path d="M3 19 L10 13 L17 19"/></svg> Général<br><b>${genUnit ? `→ ${shortName(genUnit.name, 10)} ${genUnit.idx}` : (LAND.genMode ? 'touchez une unité' : 'à affecter')}</b></div>`;
+            const genChip = `<div class="ub-chip ${genUnit ? 'done' : ''} ${LAND.genMode ? 'gen-on' : ''}" data-general="1" style="border-color:#c79100"><svg viewBox="0 0 20 20" width="16" height="16" style="vertical-align:-3px" fill="none" stroke="#c79100" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7 L10 1 L17 7"/><path d="M3 13 L10 7 L17 13"/><path d="M3 19 L10 13 L17 19"/></svg> Général<br><b>${genUnit ? `→ ${unitLbl(genUnit)}` : (LAND.genMode ? 'touchez une unité' : 'à affecter')}</b></div>`;
             const info = `<div class="ub-info" title="Unités posées · zone ${(LAND.view.myZone || '').toUpperCase()}">${done}/${units.length}<br>zone ${(LAND.view.myZone || '').toUpperCase()}</div>`;
             bar.innerHTML = info + genChip + (chips || '<div class="ub-info">✓<br>tout est posé</div>');
             bar.hidden = false;
@@ -5673,9 +5743,10 @@
             const b = LAND.view.b || {}, m = LAND.view.m;
             const U = (id) => LAND.units.find((u) => u.id === id);
             const L = (id) => { const u = U(id); return u ? `<b>${unitLbl(u)}</b> <small>(${String(u.owner).replace(/[<>&]/g, '')})</small>` : '?'; };
-            const st = x.res ? { contact: '✔ au contact', mutual: '⇄ charge mutuelle jouée', second: '🛡️ deuxième rideau', failed: '❌ échouée', none: '⛔ restée en place' }[x.res.kind] || '✔ jouée' : (i === m.qi && m.step === 'charge' ? '▶ en cours' : '• en attente');
+            const st = x.res ? { contact: '✔ au contact', mutual: '⇄ charge mutuelle jouée', second: '🛡️ deuxième rideau', failed: '❌ échouée', none: '⛔ restée en place', taken: '⛔ n’a pas lieu (unité déjà chargée)' }[x.res.kind] || '✔ jouée' : (i === m.qi && m.step === 'charge' ? '▶ en cours' : '• en attente');
             let h = `<div class="bat-row"><b>Charge ${i + 1} / ${q.length}</b> · ${st}</div>`;
             h += `<p style="margin:4px 0">${L(x.id)} ${x.mutual ? '⇄' : '➜'} ${L(x.target)}</p>`;
+            if (x.wasMutual) h += '<p class="lp-hint" style="margin:2px 0">↪️ Charge mutuelle devenue simple : l’autre unité était déjà prise au corps à corps ; celle-ci fait tout le trajet jusqu’à son contact.</p>';
             const facts = [`📏 ${x.dist} hex par le trajet${x.tie ? ` · 🎲 départage ${x.tie}` : ''}`];
             for (const id of x.mutual ? [x.id, x.target] : [x.id]) {
                 const o = b.orders?.[id]; if (!o) continue;
@@ -5744,6 +5815,14 @@
                 for (const [id, o] of Object.entries(r.orient || {})) ori.set(id, o);
                 push({ qi, kind: 'end', T });
             }
+            // Déplacements (après les charges), dans l'ordre où ils ont été joués : une image par tuile, puis l'orientation choisie.
+            (v.m?.moves || []).forEach((mv, mi) => {
+                const p = mv.path?.length ? mv.path : [mv.from, mv.to];
+                const T = p.length - 1;
+                for (let t = 1; t <= T; t++) { pos.set(mv.id, p[t]); ori.set(mv.id, dirOf(p[t - 1], p[t])); push({ qi: -2, mi, kind: 'tile', t, T }); }
+                pos.set(mv.id, mv.to); if (mv.orient != null) ori.set(mv.id, mv.orient);
+                push({ qi: -2, mi, kind: 'end', T });
+            });
             LAND.filmCache = { view: v, n: LAND.units.length, frames };
             return frames;
         }
@@ -5763,7 +5842,7 @@
             const fr = frames[f];
             let wait = 0;
             if (withDice && fr.dice) { fr.dice.forEach((d, k) => setTimeout(() => { if (LAND.film === F) showDiceAnim({ ...d, id: 'film' + Date.now() + k }); }, k * 2600)); wait = fr.dice.length * 2600; }
-            LAND.cw.sel = fr.qi;
+            LAND.cw.sel = fr.qi; LAND.cw.mv = fr.qi === -2 ? fr.mi : null;
             renderChargeWin(); requestDraw();
             return wait;
         }
@@ -5785,13 +5864,18 @@
         function filmStop() { if (LAND.film) clearTimeout(LAND.film.timer); LAND.film = null; LAND.moveAnims = []; LAND.units = buildUnits(LAND.view); requestDraw(); }
         function renderChargeWin() {
             const v = LAND.view, q = v.m?.queue || [];
-            if (!LAND.cw?.open || v.phase !== 'move' || !q.length) { if (LAND.film) filmStop(); return hideFloatWin('chargeWin'); }
+            const mvs = v.m?.moves || [];
+            if (!LAND.cw?.open || v.phase !== 'move' || (!q.length && !mvs.length)) { if (LAND.film) filmStop(); return hideFloatWin('chargeWin'); }
             const frames = buildFilm(), last = frames.length - 1, F = LAND.film, f = F ? F.f : last, fr = frames[f];
             const steps = filmSteps();
             const startOf = (qi) => frames.findIndex((x) => x.qi === qi);
             const k = steps.indexOf(fr.qi);
-            const prevCharge = fr.kind === 'start' ? 0 : (f > startOf(fr.qi) ? startOf(fr.qi) : (k > 0 ? startOf(steps[k - 1]) : 0));
-            const nextCharge = k + 1 < steps.length ? startOf(steps[k + 1]) : last;
+            // blocs du film : chaque charge jouée, puis chaque déplacement
+            const blk = (x) => (x.qi === -2 ? `m${x.mi}` : `c${x.qi}`);
+            const starts = []; frames.forEach((x, i) => { if (i === 0 || blk(x) !== blk(frames[i - 1])) starts.push(i); });
+            const curStart = [...starts].reverse().find((i) => i <= f) ?? 0;
+            const prevCharge = f > curStart ? curStart : ([...starts].reverse().find((i) => i < curStart) ?? 0);
+            const nextCharge = starts.find((i) => i > f) ?? last;
             const dis = (c) => (c ? 'disabled' : '');
             let h = `<div class="bat-row" style="justify-content:center;gap:4px;flex-wrap:wrap">`
                 + `<button class="lp-seg" data-land="film" data-go="0" ${dis(f === 0)} title="Positions d’origine, avant les charges">⏮</button>`
@@ -5802,20 +5886,26 @@
                 + `<button class="lp-seg" data-land="film" data-go="${nextCharge}" data-dice="1" ${dis(f >= last)} title="Charge suivante">⏩</button>`
                 + `<button class="lp-seg" data-land="film" data-go="${last}" ${dis(f >= last)} title="Après toutes les charges">⏭</button></div>`;
             const L = (id) => { const u = LAND.units.find((z) => z.id === id); return u ? `${unitLbl(u)} (${String(u.owner).replace(/[<>&]/g, '')})` : '?'; };
+            const mvNow = fr.qi === -2 ? mvs[fr.mi] : null;
             const what = fr.kind === 'start' ? 'positions d’origine, avant les charges'
+                : mvNow ? `déplacement ${fr.mi + 1}/${mvs.length} (${L(mvNow.id)}) — ${fr.kind === 'tile' ? `tuile ${fr.t} / ${fr.T}` : 'arrivée et orientation'}`
                 : `charge ${k + 1}/${steps.length} (${L(q[fr.qi].id)} ${q[fr.qi].mutual ? '⇄' : '➜'} ${L(q[fr.qi].target)}) — ${fr.kind === 'dice' ? '🎲 jet de dés' : fr.kind === 'tile' ? `tuile ${fr.t} / ${fr.T}` : 'arrivée et orientation'}`;
             h += `<p class="lp-hint" style="text-align:center;margin:2px 0"><b>Image ${f} / ${last}</b> — ${what}</p>`;
             if (fr.dice) h += `<p class="lp-hint" style="text-align:center">🎲 ${fr.dice.map((d) => `${d.title} : ${d.dice.map((x) => `${x.label} ${x.v}${x.ok ? ' ✔' : ''}`).join(' · ')}`).join(' — ')} <button class="lp-seg" data-land="filmdice">Revoir les dés</button></p>`;
             if (fr.kind === 'start') h += `<p style="margin:4px 0">🎬 Les unités sont à leur position d’origine. « 1 ▶ » avance d’une tuile, « ▶ » joue le film en continu.</p>`;
+            else if (mvNow) h += `<p style="margin:4px 0">👣 <b>Déplacement ${fr.mi + 1} / ${mvs.length}</b> : ${L(mvNow.id)}, de ${mvNow.from} à ${mvNow.to}, ${Math.max(0, (mvNow.path || []).length - 1)} tuile(s) sur le trajet réel.</p>`;
             else h += chargeDetailHtml(q[fr.qi], fr.qi, q);
             h += '<div class="bat-log" style="max-height:20vh;margin-top:6px">' + q.map((y, j) => {
                 const kk = steps.indexOf(j), cur = fr.qi === j;
                 return `<div class="bat-row" ${kk >= 0 ? `data-land="film" data-go="${startOf(j)}" data-dice="1" style="cursor:pointer;${cur ? 'font-weight:700;background:#fff3c4' : ''}"` : 'style="opacity:.5"'}>${kk >= 0 ? (kk < k || (kk === k && fr.kind === 'end') ? '✔' : (cur ? '▶' : '○')) : '•'} ${j + 1}. ${L(y.id)} ${y.mutual ? '⇄' : '➜'} ${L(y.target)}${kk < 0 ? ' (pas encore jouée)' : ''}</div>`;
+            }).join('') + mvs.map((mv, j) => {
+                const st = frames.findIndex((x) => x.qi === -2 && x.mi === j), cur = mvNow === mv;
+                return `<div class="bat-row" data-land="film" data-go="${st}" style="cursor:pointer;${cur ? 'font-weight:700;background:#fff3c4' : ''}">${st <= f && !cur ? '✔' : (cur ? '▶' : '○')} 👣 ${L(mv.id)} : ${mv.from} → ${mv.to}</div>`;
             }).join('') + '</div>';
             h += '<p class="lp-hint" style="margin-top:4px">Sur la carte : trajet de la charge en jaune, tuiles numérotées dans l’ordre du déplacement, cible entourée de rouge. Fermer la fenêtre rend la carte réelle.</p>';
             const x = fr.qi >= 0 ? q[fr.qi] : null;
-            const tiles = x ? [x.id, x.target].map((id) => LAND.units.find((u) => u.id === id)?.tile).filter(Boolean) : [];
-            floatWin('chargeWin', '🎬 Film des charges', h, { key: 'cw' + LAND.cw.n, tiles, onClose: () => { LAND.cw.open = false; filmStop(); } });
+            const tiles = x ? [x.id, x.target].map((id) => LAND.units.find((u) => u.id === id)?.tile).filter(Boolean) : (mvNow ? [mvNow.from, mvNow.to] : []);
+            floatWin('chargeWin', '🎬 Film des charges et des déplacements', h, { key: 'cw' + LAND.cw.n, tiles, onClose: () => { LAND.cw.open = false; filmStop(); } });
         }
         function hideFloatWin(id) { const w = document.getElementById(id); if (w) w.hidden = true; }
         function showDiceAnim(a) {
