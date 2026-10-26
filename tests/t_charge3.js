@@ -101,6 +101,16 @@ setTimeout(async () => {
     ok(!dm.has('4,12') || dm.get('4,12') > 2, 'volante restée au sol : pas de sortie par le côté du pont');
     B.orders[F].air = true; dm = S.reachMap(FU, 4, false);
     ok(dm.get('4,11') === 1, 'volante en vol : elle survole la rivière et le pont');
+    // Cavalerie : ni fortification, ni demi-fortification, ni village à toit plat (on n'y monte pas, on ne s'y arrête pas).
+    const CV = lb.filter((l) => /^caval/.test(l.name)).map((l) => `bob|${l.uid}#1`)[0];
+    const CU = S.allBattleUnits().find((x) => x.id === CV);
+    O2(['8,6'], 'village-flat'); O2(['9,6'], 'fortress');
+    ok(CU && S.stopBlock('8,6', CU) && S.stopBlock('9,6', CU), 'cavalerie : arrêt refusé sur village à toit plat et fortification (type ' + CU?.line.type + ')');
+    for (const id of Object.keys(B.pos)) if (['7,6', '8,6', '9,6'].includes(B.pos[id])) B.pos[id] = '20,4';
+    B.pos[CV] = '7,6'; B.orders[CV] = { type: 'depl', tile: '7,6' };
+    const dc = S.reachMap(CU, 4, false);
+    ok(!dc.has('8,6') && !dc.has('9,6'), 'cavalerie : elle ne monte pas sur le village à toit plat ni sur la fortification');
+    ok(!S.stopBlock('8,6', FU), 'une unité qui n’est pas de la cavalerie peut se tenir sur le village à toit plat');
   }
   console.log(`\n${nok} OK, ${nko} FAIL`);
   process.exit(0);
