@@ -93,7 +93,7 @@ setTimeout(async () => {
   B.orders[Z] = { type: 'depl' };
   S.emitLanding();
   await __ready(b, L); await __ready(c, L);
-  r = await mj.call('landing-move', {}); ok(r.success, 'ordres révélés');
+  r = await mj.call('landing-move', { manual: true }); ok(r.success, 'ordres révélés');
   ok(B.orders[E].target === ZT && B.orders[E].screened === Z, 'la charge se dirige vers les tirailleurs');
   const m = S.state.landing.m;
   ok(m.queue[m.qi] && m.queue[m.qi].id === E, 'à jouer : la charge de E');
@@ -114,7 +114,7 @@ setTimeout(async () => {
   B.orders[E] = { type: 'depl' };
   S.emitLanding();
   await __ready(b, L); await __ready(c, L);
-  r = await mj.call('landing-move', {}); ok(r.success, 'ordres révélés');
+  r = await mj.call('landing-move', { manual: true }); ok(r.success, 'ordres révélés');
   ok(B.orders[Z].seen === true, 'ses tirailleurs ne gênent pas sa vision (' + (B.orders[Z].why || 'visible') + ')');
   tiles = L(c).m.allow[Z] || [];
   r = await c.call('move-do', { unit: Z, tile: tiles[0] }); ok(r.success, 'charge jouée');

@@ -72,6 +72,13 @@ setTimeout(async () => {
   reset(); T(row(10), 'mountain'); await see(A, B, false, '12. montagne', 'montagne');
   // unités sur le trait
   reset(); await see(X, B4, false, '13. unité au sol entre deux unités en plaine', 'unité');
+  { // montagne qui rogne le trait au coin : elle bloque aussi la vue d'une unité volante en vol (cas de la capture du MJ)
+    const S0 = global.__srv, BB = S0.state.landing.b, kA = BB.pos[A], kF = BB.pos[F];
+    BB.pos[A] = '6,3'; BB.pos[F] = '9,10';
+    reset(); T(['7,6'], 'mountain');
+    await see(A, F, false, '13c. montagne qui rogne le trait au coin : bloque la vue, même vers une unité volante en vol', 'montagne');
+    reset(); BB.pos[A] = kA; BB.pos[F] = kF;
+  }
   { const S0 = global.__srv, BB = S0.state.landing.b, keepX3 = BB.pos[X3], keepGT = BB.pos[GT];
     BB.pos[X3] = '20,3'; BB.pos[GT] = '11,10';
     await see(X, B4, false, '13b. grande taille entre deux unités en plaine : elle cache la vue comme une autre unité', 'unité');
@@ -95,7 +102,7 @@ setTimeout(async () => {
   r = await b.call('battle-order', { unit: A, order: { type: 'charge', target: F } });
   ok(r.success && L(b).b.orders[A].seen === true, '27. ordre de charge : visible (choix caché)');
   await __ready(b, L); await __ready(c, L);
-  r = await mj.call('landing-move', {});
+  r = await mj.call('landing-move', { manual: true });
   ok(r.success && L(mj).b.orders[A].seen === false && L(mj).b.orders[A].why === 'dans une forêt', '28. à la révélation : recalcul avec « au sol » → cachée dans la forêt (' + L(mj).b.orders[A].why + ')');
   // l'unité volante au sol se déplace comme une unité au sol (montagne infranchissable)
   await mj.call('landing-goto', { phase: 'orders' }); reset();
@@ -112,7 +119,7 @@ setTimeout(async () => {
   T(row(10), 'mountain'); // seul passage : la tuile de X3 (unité amie)
   r = await b.call('battle-order', { unit: X, order: { type: 'charge', target: B4 } }); ok(r.success, '30. ordre de charge à travers la ligne de montagnes ' + (r.message || ''));
   await __ready(b, L); await __ready(c, L);
-  r = await mj.call('landing-move', {}); let v = L(mj);
+  r = await mj.call('landing-move', { manual: true }); let v = L(mj);
   for (let k = 0; k < 10 && v.m.step === 'charge' && v.m.queue[v.m.qi]?.id !== X; k++) { const act = v.m.actors[0]; await (act.startsWith('bob') ? b : c).call('move-skip', { unit: act }); v = L(mj); }
   const al = L(b).m.allow[X] || [];
   console.log('tuiles de charge proposées', al);

@@ -1412,12 +1412,12 @@ function landingViewFor(socket) {
     const L = state.landing;
     const name = socket.data.name;
     const admin = Boolean(socket.data.isAdmin);
-    const base = { phase: L.phase, admin, teamNames: { ...state.fichesTeams.names } };
+    const base = { phase: L.phase, admin, teamNames: { ...state.fichesTeams.names }, test: { on: Boolean(L.test?.on), ...(admin && L.test?.on ? { players: Object.keys(L.roster || {}) } : {}) } };
     if (L.phase === 'off') return base;
 
     const teamOf = (n) => state.fichesTeams.members[keyOf(state.fichesTeams.members, n) ?? ''] ?? null;
     const players = Object.keys(state.fichesTeams.members).filter((n) => state.fichesTeams.members[n]);
-    const myTeam = name ? teamOfName(name) : null;
+    const myTeam = name && !(admin && L.test?.on) ? teamOfName(name) : null; // MJ en mode test : il voit tout, comme un arbitre
     const myGroup = myTeam ? groupOfTeam(myTeam) : null;
     const everything = ['locked', 'bplace', 'orders', 'move', 'fire'].includes(L.phase) || (admin && !myTeam); // un MJ sans équipe arbitre et voit tout
     const sees = (n) => everything || (myTeam && teamOf(n) === myTeam);
@@ -1625,10 +1625,12 @@ function battleLog(text) {
 }
 const rollD = (n) => crypto.randomInt(1, n + 1);
 // Jet visible de tous : le client anime les dés 2 secondes puis affiche le résultat. dice : [{ label, sides, v, ok? }].
-function announceRoll(title, dice, text) {
+// opts.who : joueurs directement concernés (les autres voient le jet en miniature) ; opts.tiles : tuiles du combat (la fenêtre se place loin d'elles).
+function announceRoll(title, dice, text, opts = {}) {
     const b = state.landing.b;
     if (!b || !dice.length) return;
-    b.anim = { id: crypto.randomUUID().slice(0, 8), title: String(title).slice(0, 80), dice: dice.slice(0, 40), text: String(text || '').slice(0, 200) };
+    b.anim = { id: crypto.randomUUID().slice(0, 8), title: String(title).slice(0, 80), dice: dice.slice(0, 40), text: String(text || '').slice(0, 200),
+        ...(Array.isArray(opts.who) && opts.who.length ? { who: opts.who.filter(Boolean).slice(0, 12) } : {}), ...(Array.isArray(opts.tiles) ? { tiles: opts.tiles.filter(Boolean).slice(0, 12) } : {}) };
 }
 const tName = (t) => state.fichesTeams.names[t] || (t === 't1' ? 'Équipe 1' : 'Équipe 2');
 // Annonce du dé d'initiative et des dés de secteur (placement en parallèle).
@@ -1815,6 +1817,7 @@ function stopBlock(tile, unit) {
     const t = state.gridData[tile];
     if (t?.removed) return 'Cette tuile n’existe plus sur la carte.';
     if ((t?.terrain ?? 'plain') === 'mountain') return 'Les montagnes sont infranchissables.';
+    if (t?.object === 'village') return 'On ne s’arrête jamais dans un village simple (seulement à côté ; le village à toit plat est permis).';
     if ((t?.terrain ?? 'plain') === 'water' && t?.object !== 'bridge' && !(army === 'saurus' && ba)) return 'Seules les unités saurus (BA) peuvent se tenir sur l’eau.';
     return null;
 }
@@ -1886,7 +1889,7 @@ function unitMob(u) {
     return { fly, jump, air: fly || jump, swim: ba && u.line.army === 'saurus', woods: ba && u.line.army === 'elfes_sylvains', cav: /^c/i.test(String(u.line.type || '')) };
 }
 // Bonus d'armée (BA) : seulement pour les unités dont le nom porte « BA » entre parenthèses.
-const hasBA = (u) => unitTags(u?.line?.name).has('ba');
+const hasBA = (u) => !u?.line?.merc && unitTags(u?.line?.name).has('ba'); // mercenaires : jamais de bonus d'armée
 // BA de terrain : attaque −1 si l'unité est dans le terrain ou à 3 hexagones ou moins (Elfes sylvains : forêt ; Saurus : rivière, pont compris ; Skavens : village).
 const TERRAIN_BA = {
     elfes_sylvains: { label: 'forêt', test: (g) => g.object === 'forest' },
@@ -2169,7 +2172,7 @@ function visionCheck(a, b, opts = {}) {
     const anyFly = ca === 'fly' || cb === 'fly';
     const seesOverUnits = ca !== 'ground' || cb !== 'ground'; // grande taille ou unité volante
     const tryLine = (eps) => {
-        const hs = hexLine(pa, pb, eps).slice(1, -1);
+        const hs = hexTrace(pa, pb, eps[0] > 0 ? 1 : -1).filter((t) => t !== pa && t !== pb);
         const forestBehind = hs.length > 0 && obj(hs[hs.length - 1]) === 'forest';
         // 3. Montagne : toujours
         if (hs.some((t) => ter(t) === 'mountain')) return { seen: false, why: 'montagne', forestBehind };
@@ -2395,16 +2398,113 @@ function enterCharge() {
         const it = m.queue[m.qi];
         if (it.mutual) {
             prepareMutual(it);
-            if (!it.plan?.none) return;
+            if (!it.plan?.none) {
+                // Une seule issue possible : la charge se résout toute seule (les joueurs voient les unités avancer).
+                const actor = allBattleUnits().find((x) => x.id === (it.plan?.choice ? it.plan.choice.unit : it.id));
+                const tiles = actor ? moveAllowed(actor) : [];
+                if (actor && tiles.length === 1 && !L.m.manual) { doMove(actor, tiles[0]); return; }
+                return;
+            }
         } else {
             const u = allBattleUnits().find((x) => x.id === it.id);
-            if (u && unitPos(u.id) && unitPos(it.target) && moveAllowed(u).length) return;
+            if (u && unitPos(u.id) && unitPos(it.target)) {
+                const tiles = moveAllowed(u);
+                if (tiles.length === 1 && !L.m.manual) { doMove(u, tiles[0]); return; }
+                if (tiles.length) return;
+            }
             battleLog(`⛔ ${unitLabel(u)} : aucune tuile libre pour avancer, elle reste en place.`);
         }
         m.qi++;
     }
     battleLog('⚔️ Charges terminées.');
     startMoveStep();
+}
+// Annulation des déplacements : état de l'unité (et de sa cible) avant l'action.
+function pushMoveUndo(u, tid) {
+    const L = state.landing, m = L.m;
+    m.stack.push({ id: u.id, pos: L.b.pos[u.id] ?? null, orient: L.b.orient[u.id] ?? null, tid: tid ?? null, torient: tid ? (L.b.orient[tid] ?? null) : null, tpos: tid ? (L.b.pos[tid] ?? null) : null, step: m.step, qi: m.qi, active: m.active, moved: Boolean(m.moved[u.id]) });
+    if (m.stack.length > 300) m.stack.shift();
+}
+// Exécute un déplacement ou une charge vers une tuile déjà vérifiée (joueur, MJ ou résolution automatique).
+function doMove(u, tile, orient) {
+    const L = state.landing, m = L.m;
+        const it = m.step === 'charge' ? m.queue[m.qi] : null;
+    // Tirailleurs d'une unité qui charge : repérés avant le déplacement (ils sont devant elle), ils la suivent juste derrière.
+    const screens = it ? (it.mutual ? [it.id, it.target] : [u.id]).map((id) => allBattleUnits().find((x) => x.id === id)).filter(Boolean).map((p) => ({ p, t: screenOf(p) })).filter((z) => z.t) : [];
+    const follow = () => {
+        const rec = [];
+        for (const { p, t } of screens) {
+            const pp = unitPos(p.id), back = tileInDir(pp, ((L.b.orient[p.id] ?? 0) + 3) % 6);
+            const occ = new Set(allBattleUnits().filter((x) => x.id !== t.id).map((x) => unitPos(x.id)).filter(Boolean));
+            const [c, r] = pp.split(',').map(Number);
+            const cands = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, t))
+                .sort((k1, k2) => (k1 === back ? -1 : 0) - (k2 === back ? -1 : 0) || hexDistance(k1, back || k1) - hexDistance(k2, back || k2));
+            const dest = cands[0];
+            if (!dest) continue;
+            rec.push({ id: t.id, pos: L.b.pos[t.id] ?? null, orient: L.b.orient[t.id] ?? null });
+            if (dest === L.placed[t.id]) delete L.b.pos[t.id]; else L.b.pos[t.id] = dest;
+            L.b.orient[t.id] = L.b.orient[p.id];
+            battleLog(`🪶 Les tirailleurs ${unitLabel(t)} accompagnent la charge et se placent juste derrière ${unitLabel(p)}.`);
+        }
+        if (rec.length) m.stack[m.stack.length - 1].follow = rec;
+    };
+    if (it?.mutual) {
+        // Les deux unités avancent l'une vers l'autre sur le trajet ; l'unité avantagée a pu choisir où s'arrêter.
+        const A = allBattleUnits().find((x) => x.id === it.id), B = allBattleUnits().find((x) => x.id === it.target);
+        pushMoveUndo(A, B.id);
+        m.stack[m.stack.length - 1].mutual = true;
+        const fin = mutualResolve(it, tile);
+        const setPos = (x, t) => { if (t === L.placed[x.id]) delete L.b.pos[x.id]; else L.b.pos[x.id] = t; };
+        const startA = unitPos(A.id), startB = unitPos(B.id);
+        setPos(A, fin.a); setPos(B, fin.b);
+        // Marqueurs de sauvegarde recalculés seulement pour l'unité qui s'est déplacée (celle qui garde sa tuile protectrice garde ses marqueurs).
+        for (const [X, Y, moved] of [[A, B, fin.b !== startB], [B, A, fin.a !== startA]]) {
+            const ox = L.b.orders[X.id];
+            if (!ox || !moved) continue;
+            const py = unitPos(Y.id), parts = ccSaveParts(py, Y, unitPos(X.id), X);
+            const mk = parts.map((p) => p.k).concat(String(Y.line.kin || '') === 'vs' ? ['vs'] : []);
+            if (mk.length) ox.save = mk; else delete ox.save;
+            if (unitTags(X.line.name).has('c')) ox.cav = !parts.some((p) => p.k !== 'hill');
+        }
+        if (it.plan.noBridge) for (const X of [A, B]) { const ox = L.b.orders[X.id]; if (ox?.save) { ox.save = ox.save.filter((k) => k !== 'bridge'); if (!ox.save.length) delete ox.save; } } // pont : modificateur annulé des deux côtés
+        L.b.orient[A.id] = facing(fin.a, fin.b); L.b.orient[B.id] = facing(fin.b, fin.a);
+        m.moved[A.id] = true; m.moved[B.id] = true;
+        battleLog(`⚔️ ${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' (pas de contact : portées insuffisantes)'}.`);
+        follow();
+        advanceMove(u.team);
+        return true;
+    }
+    const tid = it ? it.target : null;
+    pushMoveUndo(u, tid);
+    const moved = tile !== unitPos(u.id);
+    if (tile === L.placed[u.id]) delete L.b.pos[u.id]; else L.b.pos[u.id] = tile;
+    if (it?.failed) {
+        L.b.orient[u.id] = facing(tile, unitPos(tid));
+        battleLog(`❌ ${unitLabel(u)} : charge échouée, elle avance au maximum de sa capacité de charge vers sa cible.`);
+    } else if (it && hexDistance(tile, unitPos(tid)) > 1) {
+        // Toutes les tuiles au contact de la cible sont prises : deuxième rideau, l'unité ne combattra pas.
+        L.b.orient[u.id] = facing(tile, unitPos(tid));
+        L.b.orders[u.id].second = true;
+        const tu = allBattleUnits().find((x) => x.id === tid);
+        battleLog(`🛡️ ${unitLabel(u)} : toutes les tuiles au contact de ${unitLabel(tu)} sont prises ; elle s’avance au plus près, en deuxième rideau, et ne combattra pas.`);
+    } else if (it) {
+        const tp = unitPos(tid);
+        L.b.orient[u.id] = facing(tile, tp);
+        // La cible se tourne vers l'attaquant, sauf si elle est déjà au corps à corps avec une autre unité.
+        const busy = allBattleUnits().some((x) => x.id !== u.id && x.team && x.team === u.team && unitPos(x.id) && hexDistance(unitPos(x.id), tp) === 1);
+        if (!busy) L.b.orient[tid] = facing(tp, tile);
+        const tu = allBattleUnits().find((x) => x.id === tid);
+        battleLog(`⚔️ ${u.line.name} ${u.idx} charge ${tu ? `${tu.line.name} ${tu.idx}` : 'sa cible'}${moved ? '' : ' (déjà au contact)'}.`);
+        follow();
+    } else {
+        const o = Number(orient);
+        if (Number.isInteger(o) && o >= 0 && o <= 5) L.b.orient[u.id] = o;
+        battleLog(`👣 ${u.line.name} ${u.idx} se déplace${moved ? '' : ' (reste en place)'}.`);
+    }
+    m.moved[u.id] = true;
+    advanceMove(u.team);
+    return true;
+
 }
 function advanceMove(justPlayed) {
     const m = state.landing.m;
@@ -2555,6 +2655,28 @@ function cubeRound([x, y, z]) {
     const dx = Math.abs(rx - x), dy = Math.abs(ry - y), dz = Math.abs(rz - z);
     if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
     return [rx, ry, rz];
+}
+// Toutes les tuiles réellement traversées par le segment de centre à centre (y compris un coin rogné), dans l'ordre du trajet.
+// eps : léger décalage perpendiculaire (trait qui passe exactement par un sommet ou longe un bord : un côté puis l'autre).
+function hexTrace(a, b, side) {
+    const A = hexXY(a), B = hexXY(b), n = hexDistance(a, b);
+    if (!n) return [a];
+    const dx = B.x - A.x, dy = B.y - A.y, len = Math.hypot(dx, dy) || 1;
+    const px = (-dy / len) * 1e-4 * side, py = (dx / len) * 1e-4 * side;
+    const out = [];
+    const steps = n * 40;
+    for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = A.x + dx * t + (i && i < steps ? px : 0), y = A.y + dy * t + (i && i < steps ? py : 0);
+        const rq = (Math.sqrt(3) / 3 * x - y / 3), rr = 2 / 3 * y;
+        let cx = rq, cz = rr, cy = -cx - cz;
+        let rx = Math.round(cx), ry = Math.round(cy), rz = Math.round(cz);
+        const ddx = Math.abs(rx - cx), ddy = Math.abs(ry - cy), ddz = Math.abs(rz - cz);
+        if (ddx > ddy && ddx > ddz) rx = -ry - rz; else if (ddy > ddz) ry = -rx - rz; else rz = -rx - ry;
+        const k = `${rx + (rz - (rz & 1)) / 2},${rz}`;
+        if (out[out.length - 1] !== k) out.push(k);
+    }
+    return out;
 }
 function hexLine(a, b, eps) {
     const A = cubeOf(a), B = cubeOf(b), n = hexDistance(a, b), out = [];
@@ -2917,6 +3039,14 @@ function releaseSession(s) {
     s.leave('admins');
 }
 
+// Mode « test et correction » du MJ : il agit pour tous les joueurs (et lance leurs dés). Hors de ce mode, chacun ne gère que ses unités.
+const testMJ = (socket) => Boolean(socket.data.isAdmin && state.landing?.test?.on);
+function actorName(socket, payload) {
+    if (testMJ(socket) && typeof payload?.as === 'string' && keyOf(state.landing.roster || {}, payload.as)) return keyOf(state.landing.roster, payload.as);
+    const uid0 = typeof payload?.unit === 'string' ? payload.unit : (Array.isArray(payload?.units) ? String(payload.units[0] ?? '') : '');
+    if (testMJ(socket) && uid0.includes('|')) { const o = uid0.slice(0, uid0.indexOf('|')); if (keyOf(state.landing.roster || {}, o)) return keyOf(state.landing.roster, o); }
+    return socket.data.name;
+}
 function requireAdmin(socket, ack) {
     if (socket.data.isAdmin) return true;
     reply(ack, { success: false, message: 'Action réservée à l’administrateur.' });
@@ -3744,7 +3874,7 @@ io.on('connection', (socket) => {
 
     // Un joueur dépose (ou déplace) une unité à la fois sur une tuile de sa zone.
     socket.on('landing-place', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'Le dépôt des unités n’est pas ouvert.');
@@ -3774,7 +3904,7 @@ io.on('connection', (socket) => {
 
     // Général : le joueur l'affecte à l'une de ses unités posées (plusieurs figurines). Plus de tuiles de placement supplémentaires au débarquement.
     socket.on('landing-general', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'Le général s’attribue pendant le dépôt des unités.');
@@ -3791,7 +3921,7 @@ io.on('connection', (socket) => {
 
     // Chevron de général : une seule unité à 6 hexagones ou moins du général ; au tour de placement de bataille elle gagne 3 tuiles, puis elle reçoit le pouvoir mvt +3 ou charge +2.
     socket.on('landing-chevron', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'Le chevron s’attribue pendant le dépôt des unités.');
@@ -3811,7 +3941,7 @@ io.on('connection', (socket) => {
     // Simulation (carte virtuelle) : un joueur place la position virtuelle de l'une de ses unités posées, dans la portée qu'elle a depuis sa tuile de dépôt
     // (la portée exacte est vérifiée sur la carte ; le serveur contrôle les règles communes). Une seule unité par tuile hors tuiles de dépôt.
     socket.on('landing-sim', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'place') return landingFail(ack, 'La simulation se modifie pendant le dépôt des unités.');
@@ -3831,6 +3961,7 @@ io.on('connection', (socket) => {
         const gt = state.gridData[tile];
         if (gt?.removed) return landingFail(ack, 'Cette tuile n’existe plus sur la carte.');
         if ((gt?.terrain ?? 'plain') === 'mountain') return landingFail(ack, 'Les montagnes sont infranchissables.');
+        if (gt?.object === 'village') return landingFail(ack, 'On ne s’arrête jamais dans un village simple (seulement à côté).');
         if ((gt?.terrain ?? 'plain') === 'water' && gt?.object !== 'bridge' && !(f.line.army === 'saurus' && hasBA(f))) return landingFail(ack, 'Seules les unités saurus (BA) peuvent se tenir sur l’eau.');
         const inZone = state.landing.zones.some((z) => z.tiles.includes(tile));
         if (!inZone) {
@@ -3939,7 +4070,7 @@ io.on('connection', (socket) => {
 
     // Un joueur place une unité (de sa tuile de débarquement vers une tuile permise) et choisit son orientation (0 à 5).
     socket.on('battle-place', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'bplace' || !L.b) return landingFail(ack, 'Ce n’est pas le tour de placement.');
@@ -4007,7 +4138,7 @@ io.on('connection', (socket) => {
 
     // order : null (efface) ou { type: charge|tir|depl|marche|tirailleur, target?, tile? }.
     socket.on('battle-order', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'orders' || !L.b) return landingFail(ack, 'Ce n’est pas la pose des ordres.');
@@ -4068,7 +4199,7 @@ io.on('connection', (socket) => {
 
     // Unité volante : change sa position « en vol / au sol » sans changer son ordre.
     socket.on('battle-air', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name || L.phase !== 'orders' || !L.b) return landingFail(ack, 'Ce n’est pas la pose des ordres.');
         const f = findLine(name, payload?.unit);
@@ -4096,7 +4227,7 @@ io.on('connection', (socket) => {
 
     // Cibles qu'une de mes unités peut charger (distance de charge par un chemin autorisé), pour les entourer sur la carte.
     socket.on('battle-charge-targets', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name || L.phase !== 'orders' || !L.b) return reply(ack, { success: false, message: 'Ce n’est pas la pose des ordres.' });
         const f = findLine(name, payload?.unit);
@@ -4108,7 +4239,7 @@ io.on('connection', (socket) => {
 
     // Portée réelle (trajet compris) d'une de mes unités pour un ordre de déplacement ou de marche forcée.
     socket.on('battle-reach', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name || L.phase !== 'orders' || !L.b) return reply(ack, { success: false, message: 'Ce n’est pas la pose des ordres.' });
         const f = findLine(name, payload?.unit);
@@ -4119,7 +4250,7 @@ io.on('connection', (socket) => {
 
     // Ordre du général : att (attaque −1 pour les unités à 6 hex), mvt (+3 hex), charge (+2 hex), ou null.
     socket.on('battle-gorder', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'orders' || !L.b) return landingFail(ack, 'Ce n’est pas la pose des ordres.');
@@ -4145,7 +4276,7 @@ io.on('connection', (socket) => {
 
     // Un joueur valide (ou annule la validation de) ses ordres.
     socket.on('battle-ready', (payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) return landingFail(ack, 'Connectez-vous d’abord.');
         if (L.phase !== 'orders' || !L.b) return landingFail(ack, 'Ce n’est pas la pose des ordres.');
@@ -4215,6 +4346,7 @@ io.on('connection', (socket) => {
             if (B && before !== o.seen) { const A = allBattleUnits().find((x) => x.id === id); battleLog(`👁 ${unitLabel(A)} : finalement, charge ${o.seen ? 'en voyant' : 'sans voir'}${isFlier(B) ? ` (cible ${L.b.orders[B.id]?.air === false ? 'au sol' : 'en vol'})` : ''}.`); }
         }
         L.m = { step: 'charge', qi: 0, active: null, queue: [], moved: {}, stack: [], snap: { pos: { ...L.b.pos }, orient: { ...L.b.orient } } };
+        if (process.env.GAME_TEST && payload?.manual) L.m.manual = true; // tests : charges jouées à la main, sans résolution automatique
         L.m.queue = buildChargeQueue();
         battleLog('👣 Les ordres sont révélés. Phase de déplacement : d’abord les charges, de la plus proche à la plus lointaine.');
         if (!L.m.queue.length) { battleLog('Aucune charge ordonnée.'); startMoveStep(); }
@@ -4223,14 +4355,14 @@ io.on('connection', (socket) => {
     });
 
     const moveActor = (socket, payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing;
         if (!name) { landingFail(ack, 'Connectez-vous d’abord.'); return null; }
         if (L.phase !== 'move' || !L.m) { landingFail(ack, 'Ce n’est pas la phase de déplacement.'); return null; }
         const m = L.m;
         const u = allBattleUnits().find((x) => x.id === String(payload?.unit));
         if (!u) { landingFail(ack, 'Unité inconnue.'); return null; }
-        if (!socket.data.isAdmin && !ci(u.owner, name)) { landingFail(ack, 'Ce n’est pas votre unité.'); return null; }
+        if (!testMJ(socket) && !ci(u.owner, name)) { landingFail(ack, 'Ce n’est pas votre unité : chaque joueur ne gère que ses propres unités (et ses mercenaires).'); return null; }
         if (m.step === 'charge') {
             const it = m.queue[m.qi];
             const who = it?.mutual && it.plan?.choice ? it.plan.choice.unit : it?.id;
@@ -4241,95 +4373,15 @@ io.on('connection', (socket) => {
         } else { landingFail(ack, 'Les déplacements sont terminés.'); return null; }
         return u;
     };
-    const pushMoveUndo = (u, tid) => {
-        const L = state.landing, m = L.m;
-        m.stack.push({ id: u.id, pos: L.b.pos[u.id] ?? null, orient: L.b.orient[u.id] ?? null, tid: tid ?? null, torient: tid ? (L.b.orient[tid] ?? null) : null, tpos: tid ? (L.b.pos[tid] ?? null) : null, step: m.step, qi: m.qi, active: m.active, moved: Boolean(m.moved[u.id]) });
-        if (m.stack.length > 300) m.stack.shift();
-    };
 
     // Déplace (ou charge avec) l'unité. Charge : la tuile doit toucher la cible, l'orientation est automatique.
     socket.on('move-do', (payload, ack) => {
         const u = moveActor(socket, payload, ack);
         if (!u) return;
-        const L = state.landing, m = L.m;
         const tile = battleCell(payload?.tile);
         if (!tile) return landingFail(ack, 'Tuile invalide.');
         if (!moveAllowed(u).includes(tile)) return landingFail(ack, 'Tuile hors de portée, occupée ou interdite (zone d’exclusion, terrain).');
-        const it = m.step === 'charge' ? m.queue[m.qi] : null;
-        // Tirailleurs d'une unité qui charge : repérés avant le déplacement (ils sont devant elle), ils la suivent juste derrière.
-        const screens = it ? (it.mutual ? [it.id, it.target] : [u.id]).map((id) => allBattleUnits().find((x) => x.id === id)).filter(Boolean).map((p) => ({ p, t: screenOf(p) })).filter((z) => z.t) : [];
-        const follow = () => {
-            const rec = [];
-            for (const { p, t } of screens) {
-                const pp = unitPos(p.id), back = tileInDir(pp, ((L.b.orient[p.id] ?? 0) + 3) % 6);
-                const occ = new Set(allBattleUnits().filter((x) => x.id !== t.id).map((x) => unitPos(x.id)).filter(Boolean));
-                const [c, r] = pp.split(',').map(Number);
-                const cands = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, t))
-                    .sort((k1, k2) => (k1 === back ? -1 : 0) - (k2 === back ? -1 : 0) || hexDistance(k1, back || k1) - hexDistance(k2, back || k2));
-                const dest = cands[0];
-                if (!dest) continue;
-                rec.push({ id: t.id, pos: L.b.pos[t.id] ?? null, orient: L.b.orient[t.id] ?? null });
-                if (dest === L.placed[t.id]) delete L.b.pos[t.id]; else L.b.pos[t.id] = dest;
-                L.b.orient[t.id] = L.b.orient[p.id];
-                battleLog(`🪶 Les tirailleurs ${unitLabel(t)} accompagnent la charge et se placent juste derrière ${unitLabel(p)}.`);
-            }
-            if (rec.length) m.stack[m.stack.length - 1].follow = rec;
-        };
-        if (it?.mutual) {
-            // Les deux unités avancent l'une vers l'autre sur le trajet ; l'unité avantagée a pu choisir où s'arrêter.
-            const A = allBattleUnits().find((x) => x.id === it.id), B = allBattleUnits().find((x) => x.id === it.target);
-            pushMoveUndo(A, B.id);
-            m.stack[m.stack.length - 1].mutual = true;
-            const fin = mutualResolve(it, tile);
-            const setPos = (x, t) => { if (t === L.placed[x.id]) delete L.b.pos[x.id]; else L.b.pos[x.id] = t; };
-            const startA = unitPos(A.id), startB = unitPos(B.id);
-            setPos(A, fin.a); setPos(B, fin.b);
-            // Marqueurs de sauvegarde recalculés seulement pour l'unité qui s'est déplacée (celle qui garde sa tuile protectrice garde ses marqueurs).
-            for (const [X, Y, moved] of [[A, B, fin.b !== startB], [B, A, fin.a !== startA]]) {
-                const ox = L.b.orders[X.id];
-                if (!ox || !moved) continue;
-                const py = unitPos(Y.id), parts = ccSaveParts(py, Y, unitPos(X.id), X);
-                const mk = parts.map((p) => p.k).concat(String(Y.line.kin || '') === 'vs' ? ['vs'] : []);
-                if (mk.length) ox.save = mk; else delete ox.save;
-                if (unitTags(X.line.name).has('c')) ox.cav = !parts.some((p) => p.k !== 'hill');
-            }
-            if (it.plan.noBridge) for (const X of [A, B]) { const ox = L.b.orders[X.id]; if (ox?.save) { ox.save = ox.save.filter((k) => k !== 'bridge'); if (!ox.save.length) delete ox.save; } } // pont : modificateur annulé des deux côtés
-            L.b.orient[A.id] = facing(fin.a, fin.b); L.b.orient[B.id] = facing(fin.b, fin.a);
-            m.moved[A.id] = true; m.moved[B.id] = true;
-            battleLog(`⚔️ ${unitLabel(A)} et ${unitLabel(B)} se chargent mutuellement${it.plan.contact ? ' et se rencontrent' : ' (pas de contact : portées insuffisantes)'}.`);
-            follow();
-            advanceMove(u.team);
-            return landingOk(ack);
-        }
-        const tid = it ? it.target : null;
-        pushMoveUndo(u, tid);
-        const moved = tile !== unitPos(u.id);
-        if (tile === L.placed[u.id]) delete L.b.pos[u.id]; else L.b.pos[u.id] = tile;
-        if (it?.failed) {
-            L.b.orient[u.id] = facing(tile, unitPos(tid));
-            battleLog(`❌ ${unitLabel(u)} : charge échouée, elle avance au maximum de sa capacité de charge vers sa cible.`);
-        } else if (it && hexDistance(tile, unitPos(tid)) > 1) {
-            // Toutes les tuiles au contact de la cible sont prises : deuxième rideau, l'unité ne combattra pas.
-            L.b.orient[u.id] = facing(tile, unitPos(tid));
-            L.b.orders[u.id].second = true;
-            const tu = allBattleUnits().find((x) => x.id === tid);
-            battleLog(`🛡️ ${unitLabel(u)} : toutes les tuiles au contact de ${unitLabel(tu)} sont prises ; elle s’avance au plus près, en deuxième rideau, et ne combattra pas.`);
-        } else if (it) {
-            const tp = unitPos(tid);
-            L.b.orient[u.id] = facing(tile, tp);
-            // La cible se tourne vers l'attaquant, sauf si elle est déjà au corps à corps avec une autre unité.
-            const busy = allBattleUnits().some((x) => x.id !== u.id && x.team && x.team === u.team && unitPos(x.id) && hexDistance(unitPos(x.id), tp) === 1);
-            if (!busy) L.b.orient[tid] = facing(tp, tile);
-            const tu = allBattleUnits().find((x) => x.id === tid);
-            battleLog(`⚔️ ${u.line.name} ${u.idx} charge ${tu ? `${tu.line.name} ${tu.idx}` : 'sa cible'}${moved ? '' : ' (déjà au contact)'}.`);
-            follow();
-        } else {
-            const o = Number(payload?.orient);
-            if (Number.isInteger(o) && o >= 0 && o <= 5) L.b.orient[u.id] = o;
-            battleLog(`👣 ${u.line.name} ${u.idx} se déplace${moved ? '' : ' (reste en place)'}.`);
-        }
-        m.moved[u.id] = true;
-        advanceMove(u.team);
+        doMove(u, tile, payload?.orient);
         landingOk(ack);
     });
 
@@ -4338,7 +4390,7 @@ io.on('connection', (socket) => {
         const u = moveActor(socket, payload, ack);
         if (!u) return;
         const L = state.landing, m = L.m;
-        if (m.step === 'charge' && !socket.data.isAdmin) return landingFail(ack, 'Une fois les ordres révélés, la charge est obligatoire.');
+        if (m.step === 'charge' && !testMJ(socket)) return landingFail(ack, 'Une fois les ordres révélés, la charge est obligatoire (seul le MJ, en mode test et correction, peut l’annuler).');
         pushMoveUndo(u, null);
         m.moved[u.id] = true;
         battleLog(`⏭ ${u.line.name} ${u.idx} ne ${m.step === 'charge' ? 'charge pas (décision du MJ)' : 'se déplace pas'}.`);
@@ -4402,14 +4454,14 @@ io.on('connection', (socket) => {
     });
 
     const fireActor = (socket, payload, ack) => {
-        const name = socket.data.name;
+        const name = actorName(socket, payload);
         const L = state.landing, f = L.f;
         if (!name) { landingFail(ack, 'Connectez-vous d’abord.'); return null; }
         if (L.phase !== 'fire' || !f) { landingFail(ack, 'Ce n’est pas la phase de tir.'); return null; }
         if (f.step !== 'art' && f.step !== 'tir') { landingFail(ack, 'Les tirs sont terminés.'); return null; }
         const u = allBattleUnits().find((x) => x.id === String(payload?.unit));
         if (!u) { landingFail(ack, 'Unité inconnue.'); return null; }
-        if (!socket.data.isAdmin && !ci(u.owner, name)) { landingFail(ack, 'Ce n’est pas votre unité.'); return null; }
+        if (!testMJ(socket) && !ci(u.owner, name)) { landingFail(ack, 'Ce n’est pas votre unité : chaque joueur ne gère que ses propres unités (et ses mercenaires).'); return null; }
         if (u.team !== f.active) { landingFail(ack, 'Ce n’est pas le tour de votre équipe.'); return null; }
         if (!fireModes(u).includes(f.step)) { landingFail(ack, f.step === 'art' ? 'Cette unité ne peut pas tirer à l’artillerie maintenant.' : 'Cette unité ne peut pas tirer maintenant.'); return null; }
         return u;
@@ -4466,9 +4518,10 @@ io.on('connection', (socket) => {
 
     // MJ : lance les dés du tir en préparation et applique les pertes.
     socket.on('fire-roll', (payload, ack) => {
-        if (!requireAdmin(socket, ack)) return;
         const L = state.landing, f = L.f, p = f?.pending;
         if (L.phase !== 'fire' || !p) return landingFail(ack, 'Aucun tir en préparation.');
+        // Dés : lancés par le joueur du tireur ; en mode test et correction, par le MJ.
+        { const sh = findUnitAny(p.id); if (!(testMJ(socket) || (!L.test?.on && sh && ci(sh.owner, socket.data.name || '')))) return landingFail(ack, L.test?.on ? 'Mode test du MJ : c’est le MJ qui lance les dés.' : 'Ce sont les dés du joueur du tireur.'); }
         const u = allBattleUnits().find((x) => x.id === p.id);
         if (p.mode === 'art') {
             if (!u || !unitPos(u.id)) { f.pending = null; return landingFail(ack, 'Tireur absent.'); }
@@ -4492,7 +4545,8 @@ io.on('connection', (socket) => {
             res.dmg = shots.reduce((x, sh) => x + (sh.done || 0), 0);
             f.last = res; f.shot[u.id] = true;
             const txt = (sh) => sh.incident ? `incident de tir : ${sh.done || 0} PV à la machine` : (sh.blind ? 'sans vision : rien' : (sh.tile ? (sh.unit ? `tuile ${p.three.indexOf(sh.tile) + 1} : ${unitLabel(findUnitAny(sh.unit))} perd ${sh.done} PV` : `tuile ${p.three.indexOf(sh.tile) + 1} vide`) : 'hors du trajet'));
-            announceRoll(`💥 ${unitLabel(u)} → point ${p.tile}`, shots.flatMap((sh) => [{ label: 'd4', sides: 4, v: sh.r1, ok: sh.r1 <= 3 }, ...(sh.r2 ? [{ label: 'nouveau d4', sides: 4, v: sh.r2, ok: sh.r2 <= 3 && !sh.blind }] : []), ...(sh.r3 ? [{ label: 'relance du canon nain', sides: 4, v: sh.r3, ok: !sh.incident && !sh.blind }] : [])]), shots.map(txt).join(' · '));
+            announceRoll(`💥 ${unitLabel(u)} → point ${p.tile}`, shots.flatMap((sh) => [{ label: 'd4', sides: 4, v: sh.r1, ok: sh.r1 <= 3 }, ...(sh.r2 ? [{ label: 'nouveau d4', sides: 4, v: sh.r2, ok: sh.r2 <= 3 && !sh.blind }] : []), ...(sh.r3 ? [{ label: 'relance du canon nain', sides: 4, v: sh.r3, ok: !sh.incident && !sh.blind }] : [])]), shots.map(txt).join(' · '),
+                { who: [u.owner, ...[...touched.values()].map(({ u: x }) => x.owner)], tiles: [unitPos(u.id), ...p.three] });
             battleLog(`💥 ${unitLabel(u)} → point ${p.tile} : ${shots.map(txt).join(' ; ')}.`);
             fireAdvance(u.team);
             return landingOk(ack);
@@ -4537,7 +4591,7 @@ io.on('connection', (socket) => {
         f.last = res;
         f.shot[u.id] = true;
         if (p.mode === 'art') announceRoll(`💥 ${unitLabel(u)} → ${unitLabel(t)}`, res.shots.flatMap((sh) => [{ label: 'd4', sides: 4, v: sh.r1, ok: sh.r1 <= 3 }, ...(sh.r2 ? [{ label: 'relance', sides: 4, v: sh.r2, ok: Boolean(sh.hit) }] : [])]), `${res.dmg} PV · ${res.lost} figurine(s) retirée(s)${res.destroyed ? ' · unité détruite' : ''}${res.shots.some((sh) => sh.incident) ? ' · incident de tir !' : ''}`);
-        else announceRoll(`🏹 ${unitLabel(u)} → ${unitLabel(t)} · touche sur ${res.thr}+`, [...res.dice.map((dd) => ({ label: `${dd.v} pts`, sides: 10, v: dd.r, ok: dd.hit })), ...res.dice.filter((dd) => dd.a != null).map((dd) => ({ label: `🛡 < ${res.arm}`, sides: 10, v: dd.a, ok: dd.wound }))], `${res.dmg} PV · ${res.lost} figurine(s) retirée(s)${res.destroyed ? ' · unité détruite' : ''}`);
+        else announceRoll(`🏹 ${unitLabel(u)} → ${unitLabel(t)} · touche sur ${res.thr}+`, [...res.dice.map((dd) => ({ label: `${dd.v} pts`, sides: 10, v: dd.r, ok: dd.hit })), ...res.dice.filter((dd) => dd.a != null).map((dd) => ({ label: `🛡 < ${res.arm}`, sides: 10, v: dd.a, ok: dd.wound }))], `${res.dmg} PV · ${res.lost} figurine(s) retirée(s)${res.destroyed ? ' · unité détruite' : ''}`, { who: [u.owner, t.owner], tiles: [unitPos(u.id), unitPos(t.id)] });
         const extra = res.ones ? ` · ${res.ones} dé(s) à 1 : tir sur une unité alliée au contact (à résoudre)` : '';
         battleLog(`${p.mode === 'art' ? '💥' : '🏹'} ${unitLabel(u)} → ${unitLabel(t)} : ${res.dmg} PV, ${res.lost} figurine(s) retirée(s)${res.destroyed ? ', unité détruite' : ''}${res.shots?.some((s) => s.incident) ? ' · incident de tir !' : ''}${extra}.`);
         fireAdvance(u.team);
@@ -4607,8 +4661,8 @@ io.on('connection', (socket) => {
 
     // MJ : jet de fuite d'une unité (d10). Démoralisable : 1 à 7 = détruite ; indémoralisable : 1 = détruite ; +1 si le général de l'armée est mort.
     socket.on('fire-flee', (payload, ack) => {
-        if (!requireAdmin(socket, ack)) return;
         const L = state.landing, f = L.f;
+        { const fu = findUnitAny(String(payload?.unit)); if (!(testMJ(socket) || (!L.test?.on && fu && ci(fu.owner, socket.data.name || '')) || (payload?.skip && socket.data.isAdmin))) return landingFail(ack, L.test?.on ? 'Mode test du MJ : c’est le MJ qui lance les dés.' : 'Ce sont les dés du joueur de l’unité.'); }
         if (L.phase !== 'fire' || !f || f.step !== 'flee') return landingFail(ack, 'Ce n’est pas le moment des jets de fuite.');
         const id = String(payload?.unit);
         if (!(id in f.flee) || f.flee[id]) return landingFail(ack, 'Pas de jet de fuite à faire pour cette unité.');
@@ -4623,7 +4677,7 @@ io.on('connection', (socket) => {
             const r = rollD(10);
             f.flee[id] = { r, thr, out: r <= thr };
             if (r <= thr) { const hp = unitHp(u).map(() => 0); setHp(u, hp); }
-            announceRoll(`🏳️ Jet de fuite : ${unitLabel(u)}`, [{ label: `fuit si ≤ ${thr}`, sides: 10, v: r, ok: r > thr }], r <= thr ? 'L’unité fuit : détruite.' : 'L’unité tient.');
+            announceRoll(`🏳️ Jet de fuite : ${unitLabel(u)}`, [{ label: `fuit si ≤ ${thr}`, sides: 10, v: r, ok: r > thr }], r <= thr ? 'L’unité fuit : détruite.' : 'L’unité tient.', { who: [u.owner], tiles: [unitPos(u.id)] });
             battleLog(`🏳️ Jet de fuite ${unitLabel(u)} : ${r} (${r <= thr ? `≤ ${thr} → l’unité fuit, détruite` : `> ${thr} → elle tient`}).`);
         }
         if (Object.values(f.flee).every(Boolean)) { f.step = 'done'; battleLog('✅ Phase de tir terminée.'); fireFinished(); }
@@ -4645,6 +4699,31 @@ io.on('connection', (socket) => {
     });
 
     // Retour à une étape précédente (les données déjà saisies sont conservées) ou arrêt complet.
+    // Mode « test et correction » du MJ. Activation : on garde une copie de l'état. Désactivation : garder l'état actuel, ou revenir à la copie.
+    socket.on('mj-test', (payload, ack) => {
+        if (!requireAdmin(socket, ack)) return;
+        const L = state.landing;
+        if (payload?.on) {
+            if (L.test?.on) return landingOk(ack);
+            const { test, ...rest } = L;
+            L.test = { on: true, snap: JSON.stringify(rest), at: Date.now() };
+            battleLog('🧪 Le MJ passe en mode test et correction.');
+            return landingOk(ack);
+        }
+        if (!L.test?.on) return landingOk(ack);
+        if (payload?.keep === false) {
+            const back = JSON.parse(L.test.snap);
+            for (const k of Object.keys(L)) delete L[k];
+            Object.assign(L, back);
+            delete L.test;
+            battleLog('🧪 Fin du mode test : retour à l’état du début du test.');
+        } else {
+            delete L.test;
+            battleLog('🧪 Fin du mode test : l’état actuel est conservé.');
+        }
+        landingOk(ack);
+    });
+
     socket.on('landing-goto', (payload, ack) => {
         if (!requireAdmin(socket, ack)) return;
         const L = state.landing;
@@ -4944,4 +5023,4 @@ start().catch((err) => {
 });
 
 // Tests automatiques seulement (GAME_TEST=1) : accès direct à quelques fonctions de règle.
-if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
+if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };

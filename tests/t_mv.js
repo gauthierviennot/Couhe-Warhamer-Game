@@ -1,4 +1,4 @@
-process.env.DATA_DIR='/tmp/dd_'+Date.now();process.env.PORT='8862';
+process.env.GAME_TEST = '1'; process.env.DATA_DIR='/tmp/dd_'+Date.now();process.env.PORT='8862';
 const EE=require('events');const http=require('http');
 http.createServer=()=>({listen(p,cb){cb&&cb();},on(){},address(){return{port:8862}}});
 require('./harness.js');require('../server.js');
@@ -48,11 +48,11 @@ setTimeout(async()=>{
  r=await b.call('battle-order',{unit:ub[0],order:{type:'charge',target:uc[0]}});ok(r.success,'ordre charge '+(r.message||''));
  r=await c.call('battle-order',{unit:uc[1],order:{type:'depl',tile:zc[0]}});ok(r.success,'ordre depl cat1 '+(r.message||''));
  r=await b.call('battle-order',{unit:ub[1],order:{type:'depl',tile:zb[0]}});ok(r.success,'ordre depl bob1');
- r=await mj.call('landing-move',{});ok(!r.success&&r.code==='missing','refuse si ordres non validés');
+ r=await mj.call('landing-move',{manual:true});ok(!r.success&&r.code==='missing','refuse si ordres non validés');
  r=await b.call('battle-ready',{on:true});ok(!r.success&&r.code==='no-order','validation refusée tant qu’une unité n’a pas d’ordre : '+r.message);
  await __ready(b, L);await __ready(c, L);
- r=await b.call('landing-move',{});ok(!r.success,'joueur ne lance pas');
- r=await mj.call('landing-move',{});ok(r.success&&L(mj).phase==='move','phase move '+(r.message||''));
+ r=await b.call('landing-move',{manual:true});ok(!r.success,'joueur ne lance pas');
+ r=await mj.call('landing-move',{manual:true});ok(r.success&&L(mj).phase==='move','phase move '+(r.message||''));
  v=L(b);console.log('step',v.m.step,'queue',JSON.stringify(v.m.queue),'actors bob',JSON.stringify(v.m.actors),'allow n',v.m.allow[ub[0]]&&v.m.allow[ub[0]].length);
  ok(v.m.step==='charge'&&v.m.queue.length===1,'1 charge en file');
  ok(Object.keys(L(c).b.orders).includes(ub[0]),'ordres révélés à cat');

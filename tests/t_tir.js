@@ -80,6 +80,8 @@ setTimeout(async () => {
 
   r = await b.call('landing-fire', {}); ok(!r.success, 'un joueur ne lance pas les tirs');
   r = await mj.call('landing-fire', {}); ok(r.success && L(mj).phase === 'fire', 'phase de tir');
+  r = await mj.call('fire-roll', {}); // (rien à lancer)
+  r = await mj.call('mj-test', { on: true }); ok(r.success, 'le MJ passe en mode test et correction (il lance les dés)');
   v = L(mj);
   console.log('f', JSON.stringify({ step: v.f.step, active: v.f.active, rolls: v.f.rolls, left: v.f.left }));
   ok(v.f.step === 'art' && v.f.rolls.art && v.f.left.t1 === 1 && v.f.left.t2 === 1, 'artillerie : dé, une machine par équipe');

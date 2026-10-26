@@ -51,7 +51,7 @@ s+=B(['Le tir vient <b>après les charges et les autres déplacements</b>, avant
  'D’abord <b>l’artillerie</b>, puis <b>les autres tirs</b>.',
  'Pour chacune des deux étapes, un <b>d10</b> par équipe désigne l’équipe qui commence (un dé pour l’artillerie, un autre pour les autres tirs) ; ensuite les équipes tirent <b>à tour de rôle</b>, une unité à la fois. Pas de dé si une seule équipe peut tirer.',
  'La cible, la vision et les modificateurs se décident <b>au moment du tir</b>, avec les positions de ce moment (après les déplacements).',
- 'Le joueur vise sur la carte ; le MJ lance les dés (l’outil calcule) ; le MJ peut corriger les modificateurs, les pertes, et annuler la dernière action.'])
+ 'Le joueur vise sur la carte ; une <b>fenêtre de résolution</b> montre la cible, les modificateurs et le bouton « Jeter les dés » ; <b>le joueur qui tire lance les dés</b> (l’outil calcule ; en mode test et correction, c’est le MJ). Tous les joueurs voient le jet (en miniature s’ils ne sont pas concernés). Le MJ peut corriger les modificateurs, les pertes, et annuler la dernière action.'])
 s.append(P('2. Qui peut tirer',h2))
 s.append(box([['Ordre de l’unité','Tir possible ?'],
  ['Tir court / tir long','oui, à la portée de l’ordre'],

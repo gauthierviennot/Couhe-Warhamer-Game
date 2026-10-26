@@ -56,26 +56,18 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>Règles générales § 2</b> : les joueurs participent à l’élaboration de la carte, sauf les marqueurs (réservés au MJ) ; zones de débarquement avec triangles aux extrémités ; marqueurs + qui délimitent les aires de bonus des sections ; terrain figé aussi pour les joueurs.',
-    '<b>Tableau des terrains</b> : forêt et marais — en charge, ils comptent comme une tuile (pas de modificateur de déplacement), au lieu de « gratuits ».',
-    '<b>Figure 2</b> (placement) redessinée : zone à trois sections, aires de bonus délimitées par des marqueurs +.',
-    '<b>§ 5</b> : l’ordre du général est visible des joueurs de son équipe.',
-    '<b>§ 7 et § 8</b> : forêt et marais en charge ; une unité au sol peut passer sous une unité volante en vol, sans s’arrêter sur sa tuile.',
-    '<b>Annexe A</b> (vision) : une grande taille ou une unité volante restée au sol cache la vue comme une petite unité (tableau du § 3 et § 6) ; une unité volante en vol ne voit pas une unité à l’intérieur d’une forêt, mais voit une unité cachée derrière une forêt (§ 8).',
-    '<b>Annexe B</b> (charge) : forêt et marais comptent comme une tuile ; passage sous une unité volante en vol ; deuxième rideau au plus près du combat en respectant le déplacement de charge ; charge mutuelle sur un pont : un seul d10 pour le côté du pont, pas de modificateur de pont ; figures 8 (chemin de charge, avec une rivière), 9 et 11 modifiées.',
-    '<b>Renvois</b> : le document ne renvoie plus qu’à ses propres annexes.',
-    '<b>Annexe E — Le tir</b> : <b>nouvelle annexe</b> (tout le texte est nouveau), avec la nouvelle artillerie (point visé, 3 tuiles, d4, incident, priorité aux figurines les plus fortes, relance du canon nain).',
-    '<b>Annexe F</b> (ancienne annexe E) : points restant à traiter, complétée pour le tir et le débordement.',
+    '<b>Règles générales § 1 — « Qui joue quoi »</b> (nouveau) : chaque joueur ne gère que ses unités (sa légion et ses mercenaires) ; les joueurs lancent leurs dés ; fenêtre de résolution des tirs ; jets visibles de tous (miniature si non concerné) ; fenêtres déplaçables et fermables, ouvertes loin du combat ; mode « test et correction » du MJ (conserver l’état ou revenir à l’état initial).',
+    '<b>§ 3</b> : mercenaires (infanterie légère, sans bonus d’armée, sans étendard, avec les pouvoirs du général).',
+    '<b>§ 4</b> : au placement, aucune unité (volantes comprises) ne s’arrête dans un village simple.',
+    '<b>§ 7</b> : chaque charge résolue est montrée à tous (l’unité avance jusqu’au front) ; résolution automatique s’il n’y a qu’une tuile d’arrivée possible.',
+    '<b>§ 9 et Annexe A § 1</b> (vision) : une tuile touchée par le trait, même par un coin, compte comme traversée (une montagne frôlée bloque la vue).',
+    '<b>Annexe E § 1</b> (tir) : fenêtre de résolution, dés lancés par le joueur qui tire (par le MJ en mode test).',
 ]
 NEEDLES = [
-    'Les joueurs participent à l’élaboration de la carte', 'Le MJ marque les <b>zones de débarquement</b>', 'en charge : compte comme une tuile',
-    'visible des joueurs de son équipe', 'forêt et marais n’ont pas de modificateur de déplacement', 'peut passer sous une unité volante en vol',
-    'Sous une unité volante en vol :', 'qu’elle soit petite, de grande taille ou volante restée au sol', 'cible <b>à l’intérieur</b> d’une forêt',
-    'Une unité cachée <b>derrière</b> une forêt', 'au plus près du combat', 'un seul <b>d10</b> (pas de dé de mi-chemin)',
-    '(même modificateur maximum des deux côtés, par exemple muret sur colline) :', 'Placement. La zone de débarquement (contour violet',
-    'Chemin de charge. À gauche : une rivière', 'Charge mutuelle par un pont : chaque unité est sur sa tuile d’entrée de pont. Un d10',
-    '<b>Tir</b> : tir dans une mêlée', '<b>Débordement</b> (après un tir', 'Annexe F — Points restant à traiter', 'Annexe E — Le tir',
-    'Grande taille', 'Volante au sol',
+    'Chaque joueur ne gère que ses propres unités', 'Les dés sont lancés par les joueurs', 'Tous les joueurs voient les jets de dés',
+    'le plus loin possible de la zone de combat', 'Mode « test et correction » du MJ', 'Qui joue quoi', '<b>Mercenaires :</b>',
+    'ni dans un village simple', 'Chaque charge résolue est montrée à tous', 'même par un coin', 'même par un seul coin',
+    'le joueur qui tire lance les dés',
 ]
 
 
@@ -117,7 +109,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (26/10/2026, 12 h 53)', h2))
+S.append(P('Modifications depuis le dernier envoi (26/10/2026, 19 h 15)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
@@ -138,7 +130,7 @@ A.append(P('Annexe A — La vision', annex))
 A.append(P('Elle vaut pour les charges (vision fixée à la révélation des ordres) et pour les tirs (vision au moment du tir).', sub))
 A.append(P('1. La méthode', h2))
 A += B(['On trace un trait du centre de la tuile de l’unité qui agit (qui charge ou qui tire) au centre de la tuile de la cible.',
-        'Seules comptent les tuiles traversées entre les deux. La tuile de chaque unité ne gêne pas sa propre vue, sauf la forêt (§ 9).',
+        'Seules comptent les tuiles traversées entre les deux. <b>Une tuile frôlée par le trait, même par un seul coin, compte comme traversée</b> (par exemple une montagne dont le trait coupe un coin bloque la vue). La tuile de chaque unité ne gêne pas sa propre vue, sauf la forêt (§ 9).',
         'Si le trait longe exactement le bord entre deux tuiles, il suffit qu’un des deux côtés soit dégagé.',
         'Une unité amie a exactement le même effet qu’une unité ennemie.',
         '<b>Résultat :</b> charge visible ou « sans voir » (œil ou œil barré, avec la raison) ; tir : modificateur « sans voir » +4 coché si la cible n’est pas visible ; artillerie : la vision décide si la relance sur 4 peut toucher.'])
@@ -229,5 +221,7 @@ def foot(c, d):
 
 
 doc = SimpleDocTemplate('/home/claude/p2/REGLES-COMPLETES.pdf', pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm, bottomMargin=18 * mm, title='Règles du jeu', author='MJ')
+import export_html
+export_html.export(S, CHANGES_SUMMARY, 'Version du 26/10/2026 — même contenu que REGLES-COMPLETES.pdf.', '/home/claude/p2/public/regles.html')
 doc.build(mark(S), onFirstPage=foot, onLaterPages=foot)
 print('figures', num['n'])

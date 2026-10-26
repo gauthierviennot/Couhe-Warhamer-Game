@@ -233,6 +233,8 @@
         .fiches-overlay.bar { inset: auto 8px calc(8px + var(--safe-bottom)) 8px; height: auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
         .fiches-overlay.bar iframe { display: none; }
         .fiches-overlay iframe { flex: 1; width: 100%; border: 0; background: var(--bg); }
+        .fiches-overlay iframe[hidden] { display: none; }
+        @media (max-width: 520px) { .fiches-bar { flex-wrap: wrap; row-gap: 4px; } #fichesTitle { flex-basis: 100%; } }
 
         /* Message d'aide à l'ouverture de la carte */
         .help-list { padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: .85rem; color: var(--dark); line-height: 1.35; }
@@ -275,7 +277,13 @@
         #mapConfirm button { border: 2px solid #6a1b1b; border-radius: 10px; background: #fff; color: #6a1b1b; font: 700 14px/1 system-ui, sans-serif; padding: 8px 10px; box-shadow: 0 2px 8px #0006; cursor: pointer; white-space: nowrap; }
         #mapConfirm button.ok { background: #2e7d32; border-color: #1b5e20; color: #fff; }
         #mapConfirm button.x { padding: 8px 9px; }
-        #diceAnim { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+        #diceAnim { position: fixed; z-index: 90; left: 12px; top: 12px; max-width: min(92vw, 520px); }
+        #diceAnim .da-card { position: relative; }
+        .fw-head { display: flex; align-items: center; gap: 6px; cursor: move; touch-action: none; user-select: none; margin: -6px -8px 6px; padding: 4px 6px; border-bottom: 1px solid #ddd; }
+        .fw-head .fw-title { flex: 1; font-weight: 700; font-size: .85rem; }
+        .fw-head .fw-x { border: 0; background: #eee; border-radius: 6px; width: 30px; height: 28px; font-size: 1rem; }
+        .floatwin { position: fixed; z-index: 85; left: 12px; top: 12px; width: min(92vw, 440px); max-height: 70vh; overflow: auto; background: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px #0007; font: 14px/1.35 system-ui, sans-serif; }
+        .floatwin.mini, #diceAnim.mini { transform: scale(.55); transform-origin: top left; opacity: .92; }
         #diceAnim .da-card { background: #fff; border-radius: 14px; padding: 14px 16px; max-width: 520px; width: 100%; max-height: 86vh; overflow: auto; box-shadow: 0 6px 24px #0008; font: 14px/1.35 system-ui, sans-serif; text-align: center; }
         #diceAnim h3 { margin: 0 0 10px; font-size: 1rem; }
         #diceAnim .da-dice { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
@@ -528,6 +536,7 @@
     <div id="fichesOverlay" class="fiches-overlay" hidden>
         <div class="fiches-bar">
             <b id="fichesTitle">📜 Fiches d'armée</b>
+            <button class="btn btn-primary btn-small" data-fiche="rules" id="btnRules" title="Consulter les règles du jeu (plan déroulant et recherche)">📖 Règles</button>
             <span class="fiches-modes">
                 <button class="btn btn-secondary btn-small" data-fiche="mini" title="Fenêtre miniature : la carte reste visible" aria-label="Fenêtre miniature">🗗</button>
                 <button class="btn btn-secondary btn-small" data-fiche="bar" title="Réduire en barre" aria-label="Réduire en barre">—</button>
@@ -540,6 +549,7 @@
             <button id="btnFichesClose" class="btn btn-secondary btn-small" data-fiche="close">Fermer</button>
         </div>
         <iframe id="fichesFrame" title="Fiches d'armée" allow="web-share; clipboard-write"></iframe>
+        <iframe id="reglesFrame" title="Règles du jeu" hidden></iframe>
     </div>
 
     <div id="closedScreen" hidden>
@@ -3064,9 +3074,12 @@
         const GROUP_COL = { A: '#1f78ff', B: '#ff9800' };
         const ciEq = (a, b) => String(a).toLowerCase() === String(b).toLowerCase();
         const landOn = () => LAND.view.phase !== 'off';
-        const landEmit = (event, payload) => request(event, payload).then((r) => { if (!r.success && r.message && r.code !== 'missing') toast(r.message, true); return r; });
+        // Mode « test et correction » du MJ : il joue pour le joueur choisi (LAND.asPlayer) et lance les dés.
+        const testOn = () => Boolean(state.isAdmin && LAND.view?.test?.on);
+        const meName = () => (testOn() && LAND.asPlayer ? LAND.asPlayer : state.username);
+        const landEmit = (event, payload) => request(event, testOn() && LAND.asPlayer && payload && typeof payload === 'object' && !Array.isArray(payload) ? { ...payload, as: LAND.asPlayer } : payload).then((r) => { if (!r.success && r.message && r.code !== 'missing') toast(r.message, true); return r; });
         const teamName = (t) => LAND.view.teamNames?.[t] || (t === 't1' ? 'Équipe 1' : 'Équipe 2');
-        const myUnits = () => LAND.units.filter((u) => ciEq(u.owner, state.username));
+        const myUnits = () => LAND.units.filter((u) => ciEq(u.owner, meName()));
 
         // Une ligne de légion de nb = 39 donne 39 unités individuelles : ids stables « joueur|ligne#numéro ».
 
@@ -3335,6 +3348,7 @@
                 const tile = state.gridData[key];
                 const terrain = tile?.terrain ?? 'plain';
                 if (terrain === 'mountain') return false;
+                if (tile?.object === 'village') return false; // jamais dans un village simple (toit plat permis)
                 if (terrain === 'water') return swimBA(unit) || tile?.object === 'bridge';
                 return true;
             };
@@ -3613,7 +3627,7 @@
                     const g = byId.get(LAND.pick.gen);
                     if (g?.tile) {
                         c.lineWidth = R * 0.14; c.strokeStyle = '#c79100';
-                        for (const x of LAND.units) if (ciEq(x.owner, state.username) && x.tile && hexDist(x.tile, g.tile) <= genR(g)) { const q = cen(x.tile); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
+                        for (const x of LAND.units) if (ciEq(x.owner, meName()) && x.tile && hexDist(x.tile, g.tile) <= genR(g)) { const q = cen(x.tile); c.beginPath(); c.arc(q.x, q.y, R * 0.8, 0, Math.PI * 2); c.stroke(); }
                     }
                 }
                 if (LAND.pick?.type === 'fire' && LAND.pick.art) {
@@ -3764,7 +3778,7 @@
                 c.rotate(-VW.rot);
                 const place = (u, ox, oy, w) => {
                     const dim = dragSet && dragSet.has(u.id);
-                    const mine = ciEq(u.owner, state.username);
+                    const mine = ciEq(u.owner, meName());
                     c.globalAlpha = dim ? 0.3 : 1;
                     roundRectPath(c, ox - w / 2, oy - chipH / 2, w, chipH, chipH * 0.3);
                     c.fillStyle = 'rgba(255,255,255,0.96)';
@@ -4028,10 +4042,10 @@
         function hoverFor(clientX, clientY, unit) {
             const key = tileKeyAt(clientX, clientY);
             if (!key) return null;
-            if (movMode()) return { key, ok: (LAND.view.m?.allow?.[unit.id] || []).includes(key) && (ciEq(unit.owner, state.username) || state.isAdmin) };
-            if (LAND.simOn || batMode()) return { key, ok: simAllowed(unit, key) && ciEq(unit.owner, state.username) };
+            if (movMode()) return { key, ok: (LAND.view.m?.allow?.[unit.id] || []).includes(key) && (ciEq(unit.owner, meName()) || testOn()) };
+            if (LAND.simOn || batMode()) return { key, ok: simAllowed(unit, key) && ciEq(unit.owner, meName()) };
             const zone = (LAND.view.zones || []).find((z) => z.id === LAND.view.myZone);
-            return { key, ok: Boolean(zone && zone.tiles.includes(key)) && ciEq(unit.owner, state.username) };
+            return { key, ok: Boolean(zone && zone.tiles.includes(key)) && ciEq(unit.owner, meName()) };
         }
 
         // Annule tout glissement d'unité et supprime toute étiquette flottante restée à l'écran (changement de page, perte du doigt, etc.).
@@ -4101,7 +4115,7 @@
         const batchOf = (list) => list.slice(0, 1);
 
         function startDrag(unit, list, e, fromMap) {
-            if (!canEditUnits() || !ciEq(unit.owner, state.username) || !list.length) return false;
+            if (!canEditUnits() || !ciEq(unit.owner, meName()) || !list.length) return false;
             if (movMode() && unit.bdone) { toast(LAND.view.m?.step === 'charge' ? 'Les charges se jouent dans l’ordre : ce n’est pas encore le tour de cette unité.' : 'Cette unité n’a pas d’ordre de déplacement à jouer maintenant.', true); return false; }
             if (batMode() && unit.bdone) { toast(unit.bplaced ? 'Cette unité est déjà placée.' : 'Ce n’est pas encore le tour de votre équipe dans ce secteur : les sections voisines placent à tour de rôle.', true); return false; }
             const chosen = batchOf(list);
@@ -4187,8 +4201,8 @@
                 return;
             }
             // Pose des ordres : appui long sur une de mes unités = fenêtre des ordres de cette unité (la carte ne bouge pas sous le doigt).
-            const orderMine = LAND.view.phase === 'orders' && ciEq(unit.owner, state.username);
-            const fireMine = LAND.view.phase === 'fire' && !LAND.view.f?.pending && (LAND.view.f?.actors || []).includes(unit.id) && ciEq(unit.owner, state.username);
+            const orderMine = LAND.view.phase === 'orders' && ciEq(unit.owner, meName());
+            const fireMine = LAND.view.phase === 'fire' && !LAND.view.f?.pending && (LAND.view.f?.actors || []).includes(unit.id) && ciEq(unit.owner, meName());
             const open = selectorsOpen() || LAND.simOn || batTurn() || orderMine || fireMine;
             const secondTap = LAND.lastTap && LAND.lastTap.id === unit.id && performance.now() - LAND.lastTap.t < 380;
             // Sélecteurs repliés : le toucher sur une unité laisse la carte se déplacer (appui long = portée, double toucher = fiche).
@@ -4214,7 +4228,7 @@
                 }
             }
             // Mode « affecter le général » (après avoir touché la puce Général du sélecteur) : on touche l'une de ses unités posées.
-            if (LAND.genMode && ciEq(unit.owner, state.username)) {
+            if (LAND.genMode && ciEq(unit.owner, meName())) {
                 e.stopImmediatePropagation();
                 e.preventDefault();
                 LAND.genMode = false;
@@ -4365,7 +4379,7 @@
         document.addEventListener('pointerdown', (e) => {
             const chip = e.target.closest?.('#unitBar [data-line]');
             if (!chip || (e.pointerType === 'mouse' && e.button !== 0)) return;
-            const free = LAND.units.filter((u) => u.line === chip.dataset.line && !u.tile && ciEq(u.owner, state.username));
+            const free = LAND.units.filter((u) => u.line === chip.dataset.line && !u.tile && ciEq(u.owner, meName()));
             if (!free.length) return; // ligne conservée seulement pour ses étendards : rien à glisser, pas de message
             resetIdleTimer();
             if (e.pointerType !== 'touch') e.preventDefault();
@@ -4421,7 +4435,7 @@
 
         // Qui occupe une zone (parmi ce que je vois) ; une zone n'a qu'un seul joueur.
         function zoneHolder(id) {
-            const me = String(state.username || '').toLowerCase();
+            const me = String(meName() || '').toLowerCase();
             const e = Object.entries(LAND.view.choices || {}).find(([n, z]) => z === id && n.toLowerCase() !== me);
             return e ? e[0] : null;
         }
@@ -4481,7 +4495,7 @@
         /* ============================================================ */
 
         const unitLbl = (u) => `${u.type || shortName(u.name, 12)} ${u.idx}`;
-        const myKey = () => Object.keys(LAND.view.gen || {}).find((k) => ciEq(k, state.username)) ?? null;
+        const myKey = () => Object.keys(LAND.view.gen || {}).find((k) => ciEq(k, meName())) ?? null;
 
         // Orientation proposée : face à l'unité adverse la plus proche (0 = est, puis de 60° en 60° dans le sens des aiguilles d'une montre).
         function defaultOrient(unit, key) {
@@ -4522,7 +4536,7 @@
         }
 
         // Bonus d'armée (BA) : seulement les unités dont le nom porte « BA » entre parenthèses ; Saurus BA = se tiennent sur l'eau.
-        function hasBA(unit) { return (String(unit?.name || '').match(/\(([^)]*)\)/g) || []).some((g) => g.slice(1, -1).split(',').some((t) => t.trim().toLowerCase() === 'ba')); }
+        function hasBA(unit) { if (/\(merc\.\)/.test(String(unit?.name || ''))) return false; return (String(unit?.name || '').match(/\(([^)]*)\)/g) || []).some((g) => g.slice(1, -1).split(',').some((t) => t.trim().toLowerCase() === 'ba')); }
         function swimBA(unit) { return unit?.army === 'saurus' && hasBA(unit); }
         // Portée du général : 6 hexagones, 9 pour l'Empire (général d'exception).
         // Le général n'a plus de pouvoirs quand son unité est détruite.
@@ -4533,6 +4547,7 @@
             if (t?.removed) return false;
             const terrain = t?.terrain ?? 'plain';
             if (terrain === 'mountain') return false;
+            if (t?.object === 'village') return false; // jamais dans un village simple
             if (terrain === 'water') return swimBA(unit) || t?.object === 'bridge';
             return true;
         }
@@ -4590,14 +4605,14 @@
             const key = myKey();
             const g = LAND.units.find((x) => x.id === LAND.view.gen?.[key]);
             if (!g?.tile) return toast('Votre général n’est pas sur le plateau.', true);
-            if (!LAND.units.some((x) => ciEq(x.owner, state.username) && x.tile && hexDist(x.tile, g.tile) <= genR(g))) return toast(`Aucune de vos unités n’est à ${genR(g)} hexagones ou moins du général.`, true);
+            if (!LAND.units.some((x) => ciEq(x.owner, meName()) && x.tile && hexDist(x.tile, g.tile) <= genR(g))) return toast(`Aucune de vos unités n’est à ${genR(g)} hexagones ou moins du général.`, true);
             LAND.pick = { type: 'gen', order, gen: g.id };
             LAND.open = false; updateLandingUI(); updateBatUI(); requestDraw();
         }
         function handleGenPick(hitUnit) {
             const pk = LAND.pick;
             const g = LAND.units.find((x) => x.id === pk.gen);
-            if (!hitUnit || !ciEq(hitUnit.owner, state.username)) return toast('Touchez une de vos unités (cercles dorés), celle du général comprise.', true);
+            if (!hitUnit || !ciEq(hitUnit.owner, meName())) return toast('Touchez une de vos unités (cercles dorés), celle du général comprise.', true);
             if (!g?.tile || !hitUnit.tile || hexDist(hitUnit.tile, g.tile) > genR(g)) return toast(`Cette unité est à plus de ${genR(g)} hexagones du général.`, true);
             LAND.pick = null; updateBatUI(); requestDraw();
             landEmit('battle-gorder', { order: pk.order, unit: hitUnit.id }).then((r) => { if (r.success) { toast(`${pk.order === 'mvt' ? 'mvt +3' : 'charge +2'} pour ${unitLbl(hitUnit)}.`); LAND.open = true; updateLandingUI(); } });
@@ -4693,7 +4708,7 @@
 
         function openOrderDialog(unitId) {
             const u = LAND.units.find((x) => x.id === unitId);
-            if (!u || !ciEq(u.owner, state.username)) return;
+            if (!u || !ciEq(u.owner, meName())) return;
             const cur = LAND.view.b?.orders?.[unitId] ?? null;
             // Ordres selon les capacités de la fiche : charge = attaque de corps à corps ; tir court / long = attaque de tir ; artillerie = un seul ordre de tir.
             const caps = u.caps || { cc: true, tir: false, art: false };
@@ -4860,6 +4875,34 @@
             return h + '</div>';
         }
 
+        // Fenêtre de résolution d'un tir : tireur, cible, modificateurs, seuil, bouton « Jeter les dés ».
+        function firePendingBox(p) {
+            const v = LAND.view, f = v.f, admin = state.isAdmin;
+            let h = '';
+                    const mine = (f.actors || []).includes(p.id);
+            h += `<div class="fire-box"><h4>🎯 ${lblAny(p.id)} → ${p.mode === 'art' ? `point ${p.tile}` : lblAny(p.tid)} · ${p.d} hex${p.mode === 'tir' ? (p.d > 3 ? ' (longue portée)' : ' (courte portée)') : ''}</h4>`;
+            if (p.mode === 'art') h += `<p class="lp-hint">${p.dice} machine(s) : un d4 chacune. 1 à 3 : le projectile tombe sur la tuile 1, 2 ou 3 (1 = la plus proche de la machine) ; 4 : nouveau d4 (1 à 3 : la tuile correspondante si la machine voit le point, sinon rien ; 4 : incident de tir, la machine perd ses propres points d’attaque). Vision du point : ${p.los?.ok ? 'oui' : `non (${p.los?.reason || ''})`}.</p>`;
+            else h += `<p class="lp-hint">${p.points} points → <b>${p.dice} dé(s)</b> · touche sur <b>${p.thr}+</b> · armure cible ${p.arm == null ? 'aucune' : `<b>${p.arm}</b>`}${p.melee ? ' · ⚠️ cible au corps à corps (dés à 1 : tir sur une unité alliée)' : ''}</p>`;
+            for (const m of p.mods) {
+                const val = m.arm ? 'A+1' : (m.v > 0 ? `+${m.v}` : `${m.v}`);
+                if (admin) h += `<label class="fire-mod"><input type="checkbox" data-land="fmod" data-k="${m.k}" ${m.on ? 'checked' : ''}> <span class="lp-grow">${m.label}</span><b>${val}</b></label>`;
+                else if (m.on) h += `<div class="fire-mod">✔ <span class="lp-grow">${m.label}</span><b>${val}</b></div>`;
+            }
+            if (p.mode === 'tir') {
+                if (admin) h += `<div class="fire-mod"><span class="lp-grow">Ajustement libre du MJ</span><button class="lp-seg" data-land="fadj" data-d="-1">−</button><b>${p.adj > 0 ? '+' : ''}${p.adj || 0}</b><button class="lp-seg" data-land="fadj" data-d="1">+</button></div>`;
+                else if (p.adj) h += `<div class="fire-mod">✔ <span class="lp-grow">Ajustement du MJ</span><b>${p.adj > 0 ? '+' : ''}${p.adj}</b></div>`;
+            }
+            h += '<div class="lp-actions">';
+            if (canRoll(LAND.units.find((u) => u.id === p.id)?.owner)) h += '<button class="btn btn-primary" data-land="froll">🎲 Jeter les dés</button>';
+            if (admin || mine) h += '<button class="btn btn-dark" data-land="fcancel">✕ Annuler la visée</button>';
+            if (admin && p.tid) h += `<button class="btn btn-dark" data-land="ffix" data-u="${p.tid}">✏️ Pertes de la cible</button>`;
+            h += '</div>';
+            h += `<p class="lp-hint">${testOn() ? 'Mode test : le MJ lance les dés.' : 'Le joueur du tireur jette les dés ; le MJ peut corriger les modificateurs.'}</p>`;
+            h += '</div>';
+                            return h;
+        }
+        // Qui jette les dés : le joueur de l'unité ; en mode test et correction, le MJ.
+        const canRoll = (owner) => (LAND.view?.test?.on ? Boolean(state.isAdmin) : Boolean(owner && ciEq(owner, state.username)));
         function firePanelHtml() {
             const v = LAND.view, f = v.f, b = v.b;
             if (!f) return '<p class="lp-hint">Tirs en préparation…</p>';
@@ -4875,33 +4918,12 @@
                     for (const id of f.actors || []) h += `<div class="bat-row"><b>${lblAny(id)}</b><span class="lp-grow">${figsTxt(id)}</span><button class="btn btn-primary" data-land="faim" data-u="${id}">🎯 Viser</button><button class="btn btn-dark" data-land="fskip" data-u="${id}">Ne tire pas</button></div>`;
                     if ((f.actors || []).length) h += '<p class="lp-hint"><b>Appui long sur le tireur</b> (ou « 🎯 Viser »), touchez la cible sur la carte puis « Tirer » à côté d’elle. Le MJ vérifie ensuite les modificateurs et lance les dés.</p>';
                     else if (v.myTeam === f.active) h += '<p class="lp-hint">Un coéquipier choisit son tir.</p>';
-                } else {
-                    const mine = (f.actors || []).includes(p.id);
-                    h += `<div class="fire-box"><h4>🎯 ${lblAny(p.id)} → ${p.mode === 'art' ? `point ${p.tile}` : lblAny(p.tid)} · ${p.d} hex${p.mode === 'tir' ? (p.d > 3 ? ' (longue portée)' : ' (courte portée)') : ''}</h4>`;
-                    if (p.mode === 'art') h += `<p class="lp-hint">${p.dice} machine(s) : un d4 chacune. 1 à 3 : le projectile tombe sur la tuile 1, 2 ou 3 (1 = la plus proche de la machine) ; 4 : nouveau d4 (1 à 3 : la tuile correspondante si la machine voit le point, sinon rien ; 4 : incident de tir, la machine perd ses propres points d’attaque). Vision du point : ${p.los?.ok ? 'oui' : `non (${p.los?.reason || ''})`}.</p>`;
-                    else h += `<p class="lp-hint">${p.points} points → <b>${p.dice} dé(s)</b> · touche sur <b>${p.thr}+</b> · armure cible ${p.arm == null ? 'aucune' : `<b>${p.arm}</b>`}${p.melee ? ' · ⚠️ cible au corps à corps (dés à 1 : tir sur une unité alliée)' : ''}</p>`;
-                    for (const m of p.mods) {
-                        const val = m.arm ? 'A+1' : (m.v > 0 ? `+${m.v}` : `${m.v}`);
-                        if (admin) h += `<label class="fire-mod"><input type="checkbox" data-land="fmod" data-k="${m.k}" ${m.on ? 'checked' : ''}> <span class="lp-grow">${m.label}</span><b>${val}</b></label>`;
-                        else if (m.on) h += `<div class="fire-mod">✔ <span class="lp-grow">${m.label}</span><b>${val}</b></div>`;
-                    }
-                    if (p.mode === 'tir') {
-                        if (admin) h += `<div class="fire-mod"><span class="lp-grow">Ajustement libre du MJ</span><button class="lp-seg" data-land="fadj" data-d="-1">−</button><b>${p.adj > 0 ? '+' : ''}${p.adj || 0}</b><button class="lp-seg" data-land="fadj" data-d="1">+</button></div>`;
-                        else if (p.adj) h += `<div class="fire-mod">✔ <span class="lp-grow">Ajustement du MJ</span><b>${p.adj > 0 ? '+' : ''}${p.adj}</b></div>`;
-                    }
-                    h += '<div class="lp-actions">';
-                    if (admin) h += '<button class="btn btn-primary" data-land="froll">🎲 Lancer les dés</button>';
-                    if (admin || mine) h += '<button class="btn btn-dark" data-land="fcancel">✕ Annuler la visée</button>';
-                    if (admin && p.tid) h += `<button class="btn btn-dark" data-land="ffix" data-u="${p.tid}">✏️ Pertes de la cible</button>`;
-                    h += '</div>';
-                    if (!admin) h += '<p class="lp-hint">Le MJ vérifie les modificateurs et lance les dés.</p>';
-                    h += '</div>';
-                }
+                } else h += firePendingBox(p);
             } else if (f.step === 'flee') {
                 h += '<p class="lp-hint">Unités passées à la moitié de leurs figurines ou moins : jet d’un d10. Démoralisable : 1 à 7 = détruite ; indémoralisable (inf lourde ou d’élite, cavalerie lourde, monstre) : 1 = détruite ; +1 si le général de l’armée est mort.</p>';
                 for (const [id, res] of Object.entries(f.flee || {})) {
                     h += `<div class="bat-row"><b>${lblAny(id)}</b><span class="lp-grow">${figsTxt(id)}${res ? (res.skip ? ' · ignoré' : ` · dé <b>${res.r}</b> (≤ ${res.thr} fuit) → ${res.out ? '<b>fuit, détruite</b>' : 'tient'}`) : ''}</span>`;
-                    if (!res && admin) h += `<button class="btn btn-primary" data-land="fflee" data-u="${id}">🎲 Jet</button><button class="btn btn-dark" data-land="fflee" data-u="${id}" data-skip="1">Ignorer</button>`;
+                    if (!res && canRoll(LAND.units.find((u) => u.id === id)?.owner)) h += `<button class="btn btn-primary" data-land="fflee" data-u="${id}">🎲 Jet</button><button class="btn btn-dark" data-land="fflee" data-u="${id}" data-skip="1">Ignorer</button>`;
                     h += '</div>';
                 }
             } else {
@@ -4932,7 +4954,7 @@
             if (LAND.undepShown) return;
             LAND.undepShown = true;
             const und = b.undeposited;
-            const mine = und.filter((u) => ciEq(u.owner, state.username));
+            const mine = und.filter((u) => ciEq(u.owner, meName()));
             landingDialog('Placement terminé', `<p>Toutes les unités déposées sont placées.</p><p>⚠️ <b>${und.length}</b> unité${und.length > 1 ? 's n’ont' : ' n’a'} pas été déposée${und.length > 1 ? 's' : ''} au débarquement : ${und.length > 1 ? 'elles ne sont pas placées et ne participent' : 'elle n’est pas placée et ne participe'} pas à la bataille.${mine.length ? ` Dont <b>${mine.length}</b> à vous.` : ''}</p><p class="lp-hint">${undepList(und)}</p>`, [{ label: 'Compris', cls: 'btn-primary' }]);
         }
 
@@ -4971,9 +4993,9 @@
                     h += `<button class="btn btn-primary" data-land="batnext">▶ Passer aux ordres${b.allPlaced ? '' : ' (unités restantes)'}</button></div>`;
                 }
             } else {
-                const mine = LAND.units.filter((u) => ciEq(u.owner, state.username) && u.tile); // unités sur le plateau (ni détruites, ni non déposées)
+                const mine = LAND.units.filter((u) => ciEq(u.owner, meName()) && u.tile); // unités sur le plateau (ni détruites, ni non déposées)
                 const key = myKey();
-                const ready = Object.keys(b.ready || {}).some((k) => ciEq(k, state.username));
+                const ready = Object.keys(b.ready || {}).some((k) => ciEq(k, meName()));
                 h += '<p class="lp-hint">📝 Chaque joueur donne un ordre à ses unités pour le prochain tour : charge, tir, déplacement, marche forcée… Les ordres sont visibles de votre équipe, cachés à l’équipe adverse.</p>';
                 if (key && v.gen?.[key] && b.dead?.[v.gen[key]]) h += '<p class="lp-hint">☠️ L’unité de votre général est détruite : il n’a plus de pouvoirs (vos unités ont +1 à leurs jets de fuite).</p>';
                 else if (key && v.gen?.[key]) {
@@ -5040,7 +5062,7 @@
                     else txt = (f.actors || []).length && !state.isAdmin ? `${what} : à vous de viser (panneau ⚔️)` : `${what} : au tour de ${teamName(f.active)}`;
                 } else txt = f.step === 'flee' ? '🏳️ Jets de fuite' : '✅ Tirs terminés';
             } else if (v.phase === 'orders' && v.b && v.myTeam) {
-                const ready = Object.keys(v.b.ready || {}).some((k) => ciEq(k, state.username));
+                const ready = Object.keys(v.b.ready || {}).some((k) => ciEq(k, meName()));
                 txt = ready ? '✅ Ordres validés' : '📝 Appui long sur chaque unité pour lui donner un ordre';
             }
             if (txt) {
@@ -5076,6 +5098,13 @@
             const admin = state.isAdmin;
             let h = `<div class="lp-head"><b>⚔️ Débarquement</b><span class="lp-phase">${PHASE_NAME[v.phase] || ''}</span><button class="lp-x" data-land="help" aria-label="Rappel des actions" title="Rappel des actions">ℹ️</button><button class="lp-x" data-land="close" aria-label="Fermer">✕</button></div>`;
             if (v.phase === 'bplace' || v.phase === 'orders' || v.phase === 'move' || v.phase === 'fire') {
+                if (admin) {
+                    // Mode « test et correction » : le MJ joue pour tous les joueurs et lance les dés ; à la fin il garde l'état ou revient au début du test.
+                    if (v.test?.on) {
+                        h += `<div class="fire-box" style="border-color:#7b1fa2"><h4>🧪 Mode test et correction (MJ)</h4><div class="bat-row">Jouer en tant que : ${(v.test.players || []).map((n) => `<button class="lp-seg ${LAND.asPlayer === n ? 'on' : ''}" data-land="asplayer" data-n="${String(n).replace(/"/g, '')}">${String(n).replace(/[<>&"]/g, '')}</button>`).join('')}</div>`;
+                        h += '<p class="lp-hint">Vous agissez pour le joueur choisi (et vous lancez tous les dés). Terminer le test :</p><div class="lp-actions"><button class="btn btn-primary" data-land="testoff" data-keep="1">✔ Garder l’état actuel</button><button class="btn btn-dark" data-land="testoff" data-keep="0">↩️ Revenir au début du test</button></div></div>';
+                    } else h += '<div class="lp-actions"><button class="btn btn-dark" data-land="teston">🧪 Mode test et correction</button></div>';
+                } else if (v.test?.on) h += '<p class="lp-hint">🧪 Le MJ est en mode test et correction.</p>';
                 h += battlePanelHtml();
                 if (admin) h += '<div class="lp-actions"><button class="btn btn-dark" data-land="back">◀ Étape précédente</button></div>';
             } else if (admin) {
@@ -5476,17 +5505,86 @@
 
         /* ---------- Dés animés : le jet tourne 2 secondes chez tout le monde, puis le résultat s'affiche ---------- */
         let diceTimer = null;
+        // Fenêtres posées sur la carte : déplaçables (barre de titre) et fermables ; placées le plus loin possible des tuiles du combat.
+        function placeFar(el, tiles) {
+            const pts = (tiles || []).filter(Boolean).map((k) => { try { return window.__landDebug.tileScreen(k); } catch { return null; } }).filter(Boolean);
+            const W = window.innerWidth, H = window.innerHeight, r = el.getBoundingClientRect(), m = 10;
+            const corners = [[m, m], [W - r.width - m, m], [m, H - r.height - m], [W - r.width - m, H - r.height - m]];
+            let best = corners[0];
+            if (pts.length) {
+                const cx = pts.reduce((t, p) => t + p.x, 0) / pts.length, cy = pts.reduce((t, p) => t + p.y, 0) / pts.length;
+                let bd = -1;
+                for (const c0 of corners) { const d = Math.hypot(c0[0] + r.width / 2 - cx, c0[1] + r.height / 2 - cy); if (d > bd) { bd = d; best = c0; } }
+            }
+            el.style.left = `${Math.max(m, best[0])}px`; el.style.top = `${Math.max(m, best[1])}px`;
+        }
+        function makeDraggable(el, handle) {
+            if (handle.dataset.drag) return;
+            handle.dataset.drag = '1';
+            let sx = 0, sy = 0, ox = 0, oy = 0, on = false;
+            handle.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; on = true; sx = e.clientX; sy = e.clientY; const r = el.getBoundingClientRect(); ox = r.left; oy = r.top; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
+            handle.addEventListener('pointermove', (e) => { if (!on) return; el.style.left = `${Math.min(window.innerWidth - 40, Math.max(-el.offsetWidth + 60, ox + e.clientX - sx))}px`; el.style.top = `${Math.min(window.innerHeight - 30, Math.max(0, oy + e.clientY - sy))}px`; el.dataset.moved = '1'; });
+            handle.addEventListener('pointerup', () => { on = false; });
+        }
+        function floatWin(id, title, html, opt = {}) {
+            let w = document.getElementById(id);
+            if (!w) { w = document.createElement('div'); w.id = id; w.className = 'floatwin'; document.body.appendChild(w); }
+            const fresh = w.dataset.key !== String(opt.key ?? '');
+            w.dataset.key = String(opt.key ?? '');
+            w.innerHTML = `<div class="fw-head"><span class="fw-title"></span><button class="fw-x" aria-label="Fermer">✕</button></div><div class="fw-body">${html}</div>`;
+            w.querySelector('.fw-title').textContent = title;
+            LAND.fwClosed = LAND.fwClosed || {};
+            w.querySelector('.fw-x').onclick = () => { w.hidden = true; LAND.fwClosed[id] = w.dataset.key; opt.onClose?.(); };
+            w.classList.toggle('mini', Boolean(opt.mini));
+            w.hidden = LAND.fwClosed[id] === w.dataset.key; // fermée par le joueur : elle ne revient qu'au tir suivant
+            makeDraggable(w, w.querySelector('.fw-head'));
+            if (fresh) { delete w.dataset.moved; placeFar(w, opt.tiles); }
+            return w;
+        }
+        // Fenêtre de résolution des tirs (visible de tous ; en miniature pour qui n'est pas concerné), puis fenêtre du résultat.
+        function renderFireWin() {
+            const v = LAND.view, f = v.f;
+            if (v.phase !== 'fire' || !f) return hideFloatWin('fireWin');
+            const tileOf = (id) => LAND.units.find((u) => u.id === id)?.tile;
+            const ownerOf = (id) => LAND.units.find((u) => u.id === id)?.owner;
+            const me = (o) => Boolean(o && ciEq(o, state.username));
+            const p = f.pending;
+            if (p) {
+                const concerned = state.isAdmin || me(ownerOf(p.id)) || me(ownerOf(p.tid));
+                floatWin('fireWin', '🎯 Résolution du tir', firePendingBox(p), { key: `p${p.id}${p.tid || p.tile}`, tiles: [tileOf(p.id), p.tid ? tileOf(p.tid) : p.tile, ...(p.three || [])], mini: !concerned });
+                return;
+            }
+            const x = f.last;
+            if (x && Date.now() - (x.t || 0) < 10 * 60 * 1000) {
+                const hit = [x.tid, ...(x.hits || []).map((hh) => hh.id)].filter(Boolean);
+                const concerned = state.isAdmin || me(ownerOf(x.id)) || hit.some((id) => me(ownerOf(id)));
+                floatWin('fireWin', '🎲 Résultat du tir', fireResultHtml(x), { key: `r${x.t}`, tiles: [tileOf(x.id), ...hit.map(tileOf), x.tile], mini: !concerned });
+                return;
+            }
+            hideFloatWin('fireWin');
+        }
+        function hideFloatWin(id) { const w = document.getElementById(id); if (w) w.hidden = true; }
         function showDiceAnim(a) {
             let ov = document.getElementById('diceAnim');
             if (!ov) {
                 ov = document.createElement('div'); ov.id = 'diceAnim';
-                ov.addEventListener('click', () => { if (ov.dataset.done === '1') ov.hidden = true; });
                 document.body.appendChild(ov);
             }
             clearInterval(diceTimer);
             ov.dataset.done = '0';
             ov.innerHTML = `<div class="da-card"><h3></h3><div class="da-dice">${a.dice.map((d, i) => `<div class="da-die"><div class="da-face roll" data-i="${i}">?</div><div class="da-lbl"></div></div>`).join('')}</div><div class="da-text"></div><div class="da-hint">Les dés roulent…</div></div>`;
             ov.querySelector('h3').textContent = a.title;
+            { // barre de titre : déplacer, fermer ; miniature pour les joueurs qui ne sont pas directement concernés
+                const card = ov.querySelector('.da-card');
+                const head = document.createElement('div'); head.className = 'fw-head'; head.innerHTML = '<span class="fw-title">🎲 Jet de dés</span><button class="fw-x" aria-label="Fermer">✕</button>';
+                card.prepend(head);
+                head.querySelector('.fw-x').onclick = () => { ov.hidden = true; };
+                makeDraggable(ov, head);
+                const concerned = state.isAdmin || !a.who || a.who.some((n) => ciEq(n, state.username));
+                ov.classList.toggle('mini', !concerned);
+                ov.hidden = false;
+                placeFar(ov, a.tiles);
+            }
             ov.querySelectorAll('.da-lbl').forEach((el, i) => { el.textContent = `${a.dice[i].label} · d${a.dice[i].sides}`; });
             ov.hidden = false;
             const faces = [...ov.querySelectorAll('.da-face')];
@@ -5499,7 +5597,7 @@
                 clearInterval(diceTimer);
                 faces.forEach((f, i) => { const d = a.dice[i]; f.textContent = d.v; f.classList.remove('roll'); if (d.ok === true) f.classList.add('ok'); else if (d.ok === false) f.classList.add('ko'); });
                 ov.querySelector('.da-text').textContent = a.text || '';
-                ov.querySelector('.da-hint').textContent = 'Toucher pour fermer';
+                ov.querySelector('.da-hint').textContent = 'Déplacez la fenêtre par sa barre de titre ; ✕ pour fermer.';
                 ov.dataset.done = '1';
             }, 80);
         }
@@ -5513,12 +5611,57 @@
             showDiceAnim(a);
         }
 
+        // Animation des déplacements et des charges : chacun voit les unités avancer tuile par tuile jusqu'au front, une charge après l'autre.
+        const ANIM_STEP = 260;
+        LAND.moveAnims = [];
+        function hexPathC(a, b) {
+            const cube = (k) => { const [c0, r0] = k.split(',').map(Number); const x = c0 - (r0 - (r0 & 1)) / 2; return [x, -x - r0, r0]; };
+            const A = cube(a), B = cube(b), n = hexDist(a, b), out = [];
+            for (let i = 0; i <= n; i++) {
+                const t = n ? i / n : 0, v = [0, 1, 2].map((k) => A[k] + (B[k] - A[k]) * t + [1e-6, 2e-6, -3e-6][k]);
+                let [rx, ry, rz] = v.map(Math.round); const dx = Math.abs(rx - v[0]), dy = Math.abs(ry - v[1]), dz = Math.abs(rz - v[2]);
+                if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+                const k = `${rx + (rz - (rz & 1)) / 2},${rz}`; if (out[out.length - 1] !== k) out.push(k);
+            }
+            return out;
+        }
+        function applyMoveAnims() {
+            const now = Date.now();
+            let active = false;
+            for (const a of LAND.moveAnims) {
+                const u = LAND.units.find((x) => x.id === a.id); if (!u) continue;
+                const i = Math.floor((now - a.start) / ANIM_STEP);
+                if (i < a.path.length - 1) { u.tile = a.path[Math.max(0, i)]; active = true; } else u.tile = a.path[a.path.length - 1];
+            }
+            LAND.moveAnims = LAND.moveAnims.filter((a) => now - a.start < a.path.length * ANIM_STEP);
+            return active;
+        }
+        function tickMoveAnims() { const active = applyMoveAnims(); requestDraw(); if (active) setTimeout(tickMoveAnims, 60); }
+        function startMoveAnims(prevPos, prevPhase) {
+            const v = LAND.view;
+            if (!prevPos || v.phase !== 'move' || !['orders', 'move'].includes(prevPhase)) return;
+            const changed = LAND.units.filter((u) => u.tile && prevPos.get(u.id) && prevPos.get(u.id) !== u.tile);
+            if (!changed.length) return;
+            const q = v.m?.queue || [];
+            const entryOf = (id) => { const i = q.findIndex((x) => x.id === id || x.target === id); return i < 0 ? 999 : i; };
+            const groups = new Map();
+            for (const u of changed) { const g = entryOf(u.id); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(u); }
+            let t0 = Math.max(Date.now(), ...LAND.moveAnims.map((a) => a.start + a.path.length * ANIM_STEP));
+            for (const g of [...groups.keys()].sort((a, b) => a - b)) {
+                let longest = 1;
+                for (const u of groups.get(g)) { const path = hexPathC(prevPos.get(u.id), u.tile); longest = Math.max(longest, path.length); LAND.moveAnims.push({ id: u.id, path, start: t0 }); }
+                t0 += longest * ANIM_STEP + 200;
+            }
+            tickMoveAnims();
+        }
         function onLandingView(next) {
+            const prevPos = new Map((LAND.units || []).map((u) => [u.id, (LAND.moveAnims || []).find((a) => a.id === u.id)?.path.slice(-1)[0] ?? u.tile]));
             const prev = LAND.view.phase;
             if ((next?.phase || 'off') !== prev) resetLandTransient();
             LAND.view = next || { phase: 'off' };
             if (LAND.simOn && !simAvail()) { LAND.simOn = false; SIM_LOCK = false; const bn = document.getElementById('simBanner'); if (bn) bn.hidden = true; }
             LAND.units = buildUnits(LAND.view);
+            applyMoveAnims();
             if (LAND.preview && (() => { const pu = LAND.units.find((u) => u.id === LAND.preview.unit.id); return (pu?.home ?? pu?.tile) !== LAND.preview.start; })()) { LAND.preview = null; hideRangeInfo(); }
 
             if (next && next.phase !== prev) {
@@ -5534,6 +5677,8 @@
             if (next && next.phase !== prev && next.phase !== 'off') phaseNotice(false);
             checkDiceAnim(LAND.view);
             checkUndeposited(LAND.view);
+            renderFireWin();
+            startMoveAnims(prevPos, prev);
         }
 
         document.addEventListener('click', async (e) => {
@@ -5545,6 +5690,9 @@
             else if (k === 'help') phaseNotice(true);
             else if (k === 'sim') setSim(!LAND.simOn);
             else if (k === 'mskip') landEmit('move-skip', { unit: b.dataset.u });
+            else if (k === 'teston' && state.isAdmin) landEmit('mj-test', { on: true }).then((r) => { if (r.success) { LAND.asPlayer = null; toast('Mode test et correction : choisissez le joueur pour qui vous jouez.'); } });
+            else if (k === 'testoff' && state.isAdmin) landEmit('mj-test', { on: false, keep: b.dataset.keep === '1' }).then((r) => { if (r.success) { LAND.asPlayer = null; toast(b.dataset.keep === '1' ? 'Fin du test : état conservé.' : 'Fin du test : retour à l’état du début.'); } });
+            else if (k === 'asplayer' && state.isAdmin) { LAND.asPlayer = b.dataset.n; updateLandingUI(); updateBatUI(); requestDraw(); }
             else if (k === 'mundo' && state.isAdmin) landEmit('move-undo', {});
             else if (k === 'mend' && state.isAdmin) landEmit('move-end', {});
             else if (k === 'ffire' && state.isAdmin) adminNext();
@@ -5553,18 +5701,18 @@
             else if (k === 'fcancel') landEmit('fire-cancel', {});
             else if (k === 'fmod' && state.isAdmin) landEmit('fire-mod', { k: b.dataset.k, on: b.checked });
             else if (k === 'fadj' && state.isAdmin) landEmit('fire-mod', { adj: (LAND.view.f?.pending?.adj || 0) + Number(b.dataset.d) });
-            else if (k === 'froll' && state.isAdmin) landEmit('fire-roll', {});
+            else if (k === 'froll') landEmit('fire-roll', {});
             else if (k === 'fundo' && state.isAdmin) landEmit('fire-undo', {});
             else if (k === 'fend' && state.isAdmin) landEmit('fire-end', {});
             else if (k === 'ffix' && state.isAdmin) fixDialog(b.dataset.u);
-            else if (k === 'fflee' && state.isAdmin) landEmit('fire-flee', { unit: b.dataset.u, skip: b.dataset.skip === '1' });
+            else if (k === 'fflee') landEmit('fire-flee', { unit: b.dataset.u, skip: b.dataset.skip === '1' });
             else if (k === 'fnext' && state.isAdmin) adminNext();
             else if (k === 'gord' || k === 'gpick') {
                 const o = b.dataset.o || null;
                 if ((o === 'mvt' || o === 'charge') && (k === 'gpick' || !LAND.view.chev?.[myKey()])) startGenPick(o);
                 else landEmit('battle-gorder', { order: o });
             }
-            else if (k === 'bready') { const rd = Object.keys(LAND.view.b?.ready || {}).some((x) => ciEq(x, state.username)); landEmit('battle-ready', { on: !rd }); }
+            else if (k === 'bready') { const rd = Object.keys(LAND.view.b?.ready || {}).some((x) => ciEq(x, meName())); landEmit('battle-ready', { on: !rd }); }
             else if (k === 'breveal' && state.isAdmin) landEmit('battle-reveal', { on: !LAND.view.b?.revealed });
             else if (k === 'batundo' && state.isAdmin) landEmit('battle-undo', {});
             else if (k === 'batroll' && state.isAdmin) landEmit('battle-roll', {});
@@ -5742,6 +5890,7 @@
             $('fichesOverlay').hidden = false;
             if (fichesPhone()) requestFullscreen(); // téléphone : plein écran permanent, sans barre d'adresse
             if (target?.unit) setFichesMini(true);
+            if (target) showRules(false);
             updateFichesAccessUI();
             if (!frame.getAttribute('src')) {
                 state.fichesOpenTarget = target || null;
@@ -5811,6 +5960,18 @@
             closeFiches();
             setFichesMini(false);
             $('fichesFrame').removeAttribute('src');
+            showRules(false);
+        }
+
+        // Règles du jeu : dans la fenêtre des fiches, bouton « 📖 Règles » / « 📜 Fiches » (page regles.html : plan déroulant et recherche).
+        function showRules(on) {
+            const rf = $('reglesFrame');
+            if (on && !rf.getAttribute('src')) rf.src = '/regles.html?v=' + Date.now();
+            rf.hidden = !on;
+            $('fichesFrame').hidden = on;
+            $('fichesTitle').textContent = on ? '📖 Règles du jeu' : '📜 Fiches d\'armée';
+            $('btnRules').textContent = on ? '📜 Fiches' : '📖 Règles';
+            $('btnRules').title = on ? 'Revenir aux fiches d’armée' : 'Consulter les règles du jeu (plan déroulant et recherche)';
         }
 
         // Légion choisie par un joueur : nom au survol du pseudo, clic pour ouvrir sa fiche.
@@ -5872,6 +6033,7 @@
             else if (kind === 'teams') openFiches({ tab: 'players' });
             else if (kind === 'bar') setFichesBar(!$('fichesOverlay').classList.contains('bar'));
             else if (kind === 'close') closeFiches();
+            else if (kind === 'rules') showRules($('reglesFrame').hidden);
             else if (kind === 'mini') setFichesMini(!$('fichesOverlay').classList.contains('mini'));
             else if (kind === 'fullscreen') toggleFichesFullscreen();
             else if (kind === 'access' && state.isAdmin) {

@@ -67,7 +67,7 @@ setTimeout(async () => {
     await __ready(b, L); await __ready(c, L);
   };
   await giveCharges();
-  let r = await mj.call('landing-move', {}); let v = L(mj);
+  let r = await mj.call('landing-move', { manual: true }); let v = L(mj);
   console.log('file', JSON.stringify(v.m.queue.map((x) => ({ id: x.id.split('|')[1], mutual: x.mutual, n: x.plan?.n, roll: x.plan?.roll, choice: x.plan?.choice }))));
   ok(v.m.queue.length === 2 && v.m.queue.every((x) => x.mutual), 'deux charges mutuelles (une entrée par paire)');
   // jouer les deux charges : l'acteur touche la tuile proposée
@@ -101,7 +101,7 @@ setTimeout(async () => {
   await mj.call('landing-goto', { phase: 'orders' });
   mj.listeners('edit-tiles')[0]({ testForce: true,  action: 'terrain', terrain: 'hill', keys: [P(A1)] });
   await __ready(b, L); await __ready(c, L);
-  r = await mj.call('landing-move', {}); v = L(mj);
+  r = await mj.call('landing-move', { manual: true }); v = L(mj);
   if (v.m.queue[v.m.qi].id !== A1) { const S0 = v.m.actors[0].startsWith('bob') ? b : c; const t0 = L(S0).m.allow[v.m.actors[0]]; await S0.call('move-do', { unit: v.m.actors[0], tile: t0[t0.length - 1] }); }
   v = L(mj); const ch = v.m.queue[v.m.qi];
   console.log('colline', JSON.stringify(ch.plan), 'acteurs', v.m.actors);
@@ -119,7 +119,7 @@ setTimeout(async () => {
     const w1 = [], w2 = []; for (let x = 0; x <= 6; x++) w1.push(`${x},12`); for (let x = 7; x <= 13; x++) w2.push(`${x},11`);
     T2([...w1, ...w2], 'water'); O2(['3,12'], 'bridge'); O2(['10,11'], 'bridge');
     await __ready(b, L); await __ready(c, L);
-    r = await mj.call('landing-move', {}); v = L(mj);
+    r = await mj.call('landing-move', { manual: true }); v = L(mj);
     console.log('file pont', JSON.stringify(v.m.queue.map((x) => ({ id: x.id.split('|')[1], d: x.dist }))));
     const done = {};
     for (let k = 0; k < 4 && L(mj).m.step === 'charge'; k++) {

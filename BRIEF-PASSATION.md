@@ -50,6 +50,8 @@ Déroulement : 1er tour = placement (mêmes règles de portée que la simulation
 - 26/10 : bonus d'armée codés (voir journal B21) ; test `tests/t_ba.js`. Les dés de `t_pf.js` sont forcés (l'équipe 1 commence) pour un test stable.
 
 - 26/10 : règles de charge validées (journal B25, REGLES-CHARGE.pdf ; test `tests/t_charge2.js`). Règles du général : REGLES-GENERAL.pdf ; bonus d'armée : REGLES-BONUS-ARMEE.pdf.
+- 26/10 (20 h 30) : droits par joueur (chaque joueur ne gère que ses unités et ses mercenaires), mode « test et correction » du MJ (conserver ou revenir à l'état initial), dés lancés par les joueurs (par le MJ en mode test), fenêtres flottantes déplaçables/fermables loin du combat, animation des charges, village simple interdit au placement, vision par supercouverture (journal B45-B47). Tests : `landing-move {manual:true}` (GAME_TEST) coupe la résolution automatique des charges ; `t_tir.js` active `mj-test` pour lancer les dés ; `t_mjtest.js` nouveau.
+- Aide « Règles » (B48) : `public/regles.html` est régénéré par `docs-src/master.py` (via `export_html.py`) en même temps que REGLES-COMPLETES.pdf : toujours livrer les deux ensemble après une modification des règles.
 
 ## 6. Questions encore ouvertes
 Tirs : choix faits par défaut, à confirmer en jouant — constructions +2 aussi au tir (le résumé du document dit « que cc », la section Terrains non) ; ordre de retrait des figurines dans les unités composées ; « moitié de l'unité » comptée sur les figurines de départ. À trancher avant le corps à corps : ordre de résolution des mêlées, qui choisit le report des blessures, débordement (déplacement guidé ou libre).
