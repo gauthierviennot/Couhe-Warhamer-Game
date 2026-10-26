@@ -1816,12 +1816,15 @@ function advanceBattleTurn(justPlayed) {
     else if (left.some((u) => u.team === justPlayed)) b.active = justPlayed;
 }
 // Une unité peut s'arrêter sur : ni montagne, ni eau (sauf pont ou unité saurus BA), ni tuile supprimée.
+// Cavalerie : jamais sur une fortification, une demi-fortification ou un village à toit plat (placement, déplacement, charge).
+const CAV_BLOCK = ['fortress', 'fortress-half', 'village-flat'];
 function stopBlock(tile, unit) {
     const army = unit?.line?.army, ba = hasBA(unit);
     const t = state.gridData[tile];
     if (t?.removed) return 'Cette tuile n’existe plus sur la carte.';
     if ((t?.terrain ?? 'plain') === 'mountain') return 'Les montagnes sont infranchissables.';
     if (t?.object === 'village') return 'On ne s’arrête jamais dans un village simple (seulement à côté ; le village à toit plat est permis).';
+    if (/^c/i.test(String(unit?.line?.type || '')) && CAV_BLOCK.includes(t?.object)) return 'La cavalerie ne monte ni sur une fortification ni sur un village à toit plat.';
     if ((t?.terrain ?? 'plain') === 'water' && t?.object !== 'bridge' && !(army === 'saurus' && ba)) return 'Seules les unités saurus (BA) peuvent se tenir sur l’eau.';
     return null;
 }
@@ -1946,7 +1949,7 @@ function reachMap(u, limit, charge, through) {
                 if (ter === 'mountain') continue;
                 if (ter === 'water' && obj !== 'bridge' && !mob.swim) continue;
             }
-            if (mob.cav && (obj === 'fortress' || obj === 'fortress-half')) continue;
+            if (mob.cav && CAV_BLOCK.includes(obj)) continue; // la cavalerie ne monte pas sur une fortification ni sur un village à toit plat
             if (!mob.air && !mob.swim && !bridgeOk(key, nk)) continue; // pont : seulement par ses deux extrémités
             let cost = 1;
             if (!charge && !mob.fly) { if (obj === 'forest' && !mob.woods) cost++; if (ter === 'swamp') cost++; } // déplacement −1 en forêt et marais, sauf charge et vol
@@ -1987,7 +1990,7 @@ function failedChargeTiles(u, tp) {
         const dist = reachMap(u, R, true, th);
         let best = [], bd = Infinity;
         for (const [k] of dist) {
-            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && ['fortress', 'fortress-half'].includes(state.gridData[k]?.object)) || foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp)))) continue;
+            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)) || foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp)))) continue;
             const h = hexDistance(k, tp);
             if (h < bd) { best = [k]; bd = h; } else if (h === bd) best.push(k);
         }
@@ -2004,7 +2007,7 @@ function chargeFacets(u, tp) {
     const me = unitPos(u.id), mob = unitMob(u);
     const occ = new Set(allBattleUnits().filter((x) => x.id !== u.id).map((x) => unitPos(x.id)).filter(Boolean));
     const [c, r] = tp.split(',').map(Number);
-    const contact = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, u) && !(mob.cav && ['fortress', 'fortress-half'].includes(state.gridData[k]?.object)));
+    const contact = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, u) && !(mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)));
     let acc = new Map();
     for (const th of [false, true]) {
         const dist = reachMap(u, 60, true, th);
@@ -2035,7 +2038,7 @@ function chargeTiles(u, tp) {
         const dist = reachMap(u, lim, true, th);
         let best = [], bd = Infinity, bc = Infinity;
         for (const [k, d] of dist) {
-            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && ['fortress', 'fortress-half'].includes(state.gridData[k]?.object)))) continue;
+            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)))) continue;
             const h = hexDistance(k, tp);
             if (h < bd || (h === bd && d < bc)) { best = [k]; bd = h; bc = d; } else if (h === bd && d === bc) best.push(k);
         }
@@ -2066,7 +2069,7 @@ function stopTiles(u, R, isCharge, tp, through) {
             const bonus = !isCharge && !mob.fly && (state.gridData[k]?.terrain ?? 'plain') === 'path' ? 2 : 0; // route +2 si on y termine (sauf vol ; pas en charge)
             if (d > R + bonus) continue;
             if (occ.has(k) || stopBlock(k, u)) continue;
-            if (mob.cav && ['fortress', 'fortress-half'].includes(state.gridData[k]?.object)) continue;
+            if (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)) continue;
         }
         if (isCharge) { if (hexDistance(k, tp) !== 1) continue; }
         else if (k !== me && foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp))) continue; // zone d'interdiction, sauf différence de hauteur
@@ -2311,7 +2314,7 @@ function chargePath(a, b, through) {
 // (en contournant les unités, sinon à travers elles), sans tenir compte des unités posées sur ces tuiles de contact.
 function chargeInRange(u, tp, R, modes = [false, true]) {
     const [c, r] = tp.split(',').map(Number);
-    const near = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => !stopBlock(k, u) && !(unitMob(u).cav && ['fortress', 'fortress-half'].includes(state.gridData[k]?.object)));
+    const near = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => !stopBlock(k, u) && !(unitMob(u).cav && CAV_BLOCK.includes(state.gridData[k]?.object)));
     for (const through of modes) { const dist = reachMap(u, R, true, through); if (near.some((k) => dist.has(k)) || near.includes(unitPos(u.id))) return true; }
     return false;
 }
@@ -5192,4 +5195,4 @@ start().catch((err) => {
 });
 
 // Tests automatiques seulement (GAME_TEST=1) : accès direct à quelques fonctions de règle.
-if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
+if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, stopBlock, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
