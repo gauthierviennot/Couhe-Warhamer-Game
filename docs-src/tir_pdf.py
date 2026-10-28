@@ -101,7 +101,8 @@ s.append(box([['Modificateur','Valeur','Remarque'],
  ['Ajustement du MJ','libre','']],[62*mm,22*mm,90*mm]))
 s.append(P('7. L’artillerie',h2))
 s+=B(['<b>Le joueur indique le point maximal</b> du tir : une tuile à 10 hex au plus de la machine (portée maximale 10 hex = la tuile 3). Pas de portée minimale.',
- '<b>Les 3 tuiles</b> : les 3 tuiles consécutives du trajet qui finissent au point indiqué ; <b>1 = la plus proche de la machine</b>, 3 = le point indiqué.',
+ '<b>Les 3 tuiles</b> : les 3 tuiles consécutives du trajet qui finissent au point indiqué ; <b>1 = la plus proche de la machine</b>, 3 = le point indiqué. Quand le trait passe exactement entre deux tuiles, deux tuiles sont possibles pour un même dé : <b>le tireur choisit</b> celle qu’il garde (tuile en pointillés à toucher sur la carte).',
+ '<b>Portée affichée</b> : pendant la visée, la portée du tir est teintée sur la carte (10 hex pour l’artillerie ; 3 ou 7 hex pour les autres tirs) ; la cible se choisit dans cette portée.',
  'Chaque machine de l’unité lance son propre <b>d4</b> :',
  '&nbsp;&nbsp;– <b>1 à 3</b> : le projectile tombe sur la tuile 1, 2 ou 3 ;',
  '&nbsp;&nbsp;– <b>4</b> : on lance systématiquement un <b>nouveau d4</b>. Sur 1 à 3, l’artillerie touche la tuile correspondante <b>à condition que la machine voie le point visé</b> (règle de vision habituelle, Annexe A) ; sinon il ne se passe rien. Sur un nouveau <b>4 : incident de tir</b> : la machine perd elle-même ses propres points d’attaque.',

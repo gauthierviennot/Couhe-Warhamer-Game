@@ -1488,6 +1488,8 @@ function landingViewFor(socket) {
             if (L.phase === 'fire' && L.f) {
                 const f = L.f;
                 view.f = { step: f.step, active: f.active, rolls: f.rolls, pending: f.pending, last: f.last, flee: f.flee, stackLen: f.stack.length, actors: [], targets: {}, modes: {}, left: { t1: 0, t2: 0 } };
+                view.f.shot = Object.keys(f.shot || {}).filter((id) => f.shot[id]); // unités qui ont déjà tiré (couleur de fond des étiquettes)
+                view.f.shooters = f.step === 'art' || f.step === 'tir' ? fireShooters(f.step).map((u) => u.id) : [];
                 if (f.step === 'art' || f.step === 'tir') {
                     for (const u of fireShooters(f.step)) {
                         if (view.f.left[u.team] != null) view.f.left[u.team]++;
@@ -1517,6 +1519,7 @@ function landingViewFor(socket) {
                     if (!admin && !(name && ci(u.owner, name))) continue;
                     view.m.actors.push(u.id);
                     view.m.allow[u.id] = moveAllowed(u);
+                    if (view.m.allow[u.id].forbid?.length) (view.m.forbid = view.m.forbid || {})[u.id] = view.m.allow[u.id].forbid;
                 }
             }
         }
@@ -1897,6 +1900,8 @@ const isFlier = (u) => { const k = String(u.line.kin || ''); return k === 'v' ||
 const flying = (u) => isFlier(u) && state.landing.b?.orders?.[u.id]?.air !== false;
 // Pont : tuile orientée et directionnelle. Une unité au sol n'y entre et n'en sort que par ses deux extrémités, dans l'axe du pont
 // (directions dir et dir + 3, dir = rotation du pont) ; on ne monte pas sur un pont par le côté depuis la rive ou depuis l'eau.
+// Eau sans pont.
+const plainWater = (k) => (state.gridData[k]?.terrain ?? 'plain') === 'water' && state.gridData[k]?.object !== 'bridge';
 function bridgeOk(a, b) {
     for (const [t, o] of [[a, b], [b, a]]) {
         const g = state.gridData[t];
@@ -1969,6 +1974,7 @@ function reachMap(u, limit, charge, through) {
     // Une unité au sol peut passer sous une unité volante en vol (sans s'arrêter sur sa tuile).
     const enemy = new Set(allBattleUnits().filter((x) => through ? false : !flying(x) && (charge ? x.id !== u.id && x.id !== scr : (x.team && u.team && x.team !== u.team))).map((x) => unitPos(x.id)).filter(Boolean));
     const dist = new Map([[me, 0]]);
+    const prev = new Map(); // tuile précédente sur le meilleur trajet (trajet réel, règles de passage respectées)
     let queue = [[0, me]];
     while (queue.length) {
         queue.sort((a, b) => a[0] - b[0]);
@@ -1986,16 +1992,17 @@ function reachMap(u, limit, charge, through) {
                 if (ter === 'water' && obj !== 'bridge' && !mob.swim) continue;
             }
             if (mob.fortBan && CAV_BLOCK.includes(obj)) continue; // la cavalerie ne monte pas sur une fortification ni sur un village à toit plat
-            if (!mob.air && !mob.swim && !bridgeOk(key, nk)) continue; // pont : seulement par ses deux extrémités
+            if (!mob.air && !bridgeOk(key, nk) && !(mob.swim && (plainWater(key) || plainWater(nk)))) continue; // pont : seulement par ses deux extrémités (un nageur peut y monter depuis l'eau)
             if (!mob.air && !doorOk(key, nk)) continue; // fortification : seulement par sa porte
             let cost = 1;
             if (!charge && !mob.fly) { if (obj === 'forest' && !mob.woods) cost++; if (ter === 'swamp') cost++; } // déplacement −1 en forêt et marais, sauf charge et vol
             const nd = d + cost;
             if (nd > limit || nd >= (dist.get(nk) ?? Infinity)) continue;
-            dist.set(nk, nd);
+            dist.set(nk, nd); prev.set(nk, key);
             queue.push([nd, nk]);
         }
     }
+    dist.prev = prev;
     return dist;
 }
 // Tuiles où l'unité peut s'arrêter (sa propre tuile comprise) : charge = tuile contiguë à la cible ; déplacement = pas à côté d'un adversaire.
@@ -2112,7 +2119,7 @@ function stopTiles(u, R, isCharge, tp, through) {
                     const nk = `${nc},${nr}`;
                     if (!mapHas(nc, nr) || extra.has(nk) || !onRoad(nk)) continue;
                     if (!mob.jump && foeBlock.has(nk)) continue;
-                    if (!mob.swim && !bridgeOk(k, nk)) continue;
+                    if (!bridgeOk(k, nk)) continue;
                     if (!mob.jump && !doorOk(k, nk)) continue;
                     if (mob.fortBan && CAV_BLOCK.includes(state.gridData[nk]?.object)) continue;
                     extra.set(nk, step); next.push(nk);
@@ -2126,15 +2133,16 @@ function stopTiles(u, R, isCharge, tp, through) {
     const occ = new Set(all.filter((x) => x.id !== u.id).map((x) => unitPos(x.id)).filter(Boolean));
     const foes = all.filter((x) => x.team && u.team && x.team !== u.team).map((x) => unitPos(x.id)).filter(Boolean);
     const out = [];
+    const forbid = []; // tuiles à portée où l'unité ne peut pas s'arrêter (affichées en pointillés orange)
     for (const [k] of reach) {
         if (k !== me) {
-            if (occ.has(k) || stopBlock(k, u)) continue;
-            if (mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)) continue;
+            if (occ.has(k) || stopBlock(k, u) || (mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object))) { if (!isCharge) forbid.push(k); continue; }
         }
         if (isCharge) { if (hexDistance(k, tp) !== 1) continue; }
-        else if (k !== me && foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp))) continue; // zone d'interdiction, sauf différence de hauteur
+        else if (k !== me && foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp))) { forbid.push(k); continue; } // zone d'interdiction, sauf différence de hauteur
         out.push(k);
     }
+    out.forbid = forbid;
     return out;
 }
 function eligibleMovers() {
@@ -2169,17 +2177,18 @@ function buildChargeQueue() {
         if (y) { y.drop = true; x.mutual = true; x.failed = Boolean(x.failed && y.failed); if (!x.failed) delete x.failed; }
     }
     for (let i = q.length - 1; i >= 0; i--) if (q[i].drop) q.splice(i, 1);
+    // Ordre : la plus proche d'abord ; à distance égale, les charges mutuelles avant les charges simples ; d10 entre charges de même distance et de même sorte.
     const groups = {};
-    for (const x of q) (groups[x.dist] = groups[x.dist] || []).push(x);
+    for (const x of q) { const g = `${x.dist}|${x.mutual ? 'm' : 's'}`; (groups[g] = groups[g] || []).push(x); }
     for (const g of Object.values(groups)) {
         if (g.length < 2) continue;
         const seen = new Set();
         for (const x of g) { let r, k = 0; do { r = rollD(10); } while (seen.has(r) && ++k < 50 && seen.size < 10); seen.add(r); x.tie = r; } // d10, relancé en cas d'égalité
-        battleLog(`🎲 ${g.length} charges à ${g[0].dist} hexagone(s) : dé pour les départager.`);
+        battleLog(`🎲 ${g.length} charges ${g[0].mutual ? 'mutuelles' : 'simples'} à ${g[0].dist} hexagone(s) : dé pour les départager.`);
         const best = Math.max(...g.map((x) => x.tie));
         announceRoll(`Charges à égalité (${g[0].dist} hex)`, g.map((x) => { const u = findUnitAny(x.id); return { label: u ? `${u.line.name} ${u.idx}` : '?', sides: 10, v: x.tie, ok: x.tie === best }; }), 'Le plus haut charge en premier.');
     }
-    return q.sort((a, b) => a.dist - b.dist || b.tie - a.tie);
+    return q.sort((a, b) => a.dist - b.dist || (b.mutual ? 1 : 0) - (a.mutual ? 1 : 0) || b.tie - a.tie);
 }
 
 
@@ -2356,7 +2365,7 @@ function chargePath(a, b, through) {
                     if (occ.has(nk)) continue;
                     if (!air && ter === 'mountain') continue;
                     if (ter === 'water' && g.object !== 'bridge' && !swim) continue;
-                    if (!air && !swim && !bridgeOk(k, nk)) continue; // pont : seulement par ses deux extrémités
+                    if (!air && !bridgeOk(k, nk) && !(swim && (plainWater(k) || plainWater(nk)))) continue; // pont : seulement par ses deux extrémités (un nageur peut y monter depuis l'eau)
                     if (!air && !doorOk(k, nk)) continue; // fortification : seulement par sa porte
                 }
                 prev.set(nk, k); next.push(nk);
@@ -2428,7 +2437,11 @@ function prepareMutual(it) {
         plan.noBridge = true;
     } else if (mA !== mB) {
         const X = mA > mB ? 'A' : 'B';
-        const opts = X === 'A' ? [...halfA.filter((k) => protA(k) > mB), plan.kA] : [...halfB.filter((i) => protB(i) > mA).map((i) => n + 1 - i), n - plan.kA];
+        // Elle peut s'arrêter sur la tuile au meilleur modificateur — en avançant au maximum si plusieurs tuiles successives du trajet donnent ce même
+        // modificateur (dernière tuile de chaque suite) — ou aller jusqu'au milieu.
+        const best = (idx, prot, top) => idx.filter((k, j) => prot(k) === top && !(j + 1 < idx.length && prot(idx[j + 1]) === top));
+        const halfBfwd = [...halfB].reverse(); // B avance vers les indices décroissants
+        const opts = X === 'A' ? [...best(halfA, protA, mA), plan.kA] : [...best(halfBfwd, protB, mB).map((i) => n + 1 - i), n - plan.kA];
         plan.choice = { side: X, unit: X === 'A' ? A.id : B.id, opts: [...new Set(opts)].sort((p1, p2) => p1 - p2) };
     }
     // l'arrêt doit se faire sur des tuiles libres
@@ -2643,17 +2656,13 @@ function doMove(u, tile, orient) {
 function routeOf(u, from, to, charge) {
     if (!from || !to) return [];
     if (from === to) return [from];
-    const dist = reachMap(u, 60, charge);
-    if (dist.has(to)) {
+    // Trajet réel : on remonte les tuiles précédentes notées par reachMap (passages de pont, portes, coûts respectés) ;
+    // sans chemin libre, trajet à travers les unités ; en dernier recours, ligne droite.
+    for (const through of [false, true]) {
+        const dist = reachMap(u, 60, charge, through);
+        if (!dist.has(to)) continue;
         const path = [to];
-        let cur = to;
-        for (let guard = 0; cur !== from && guard < 80; guard++) {
-            const [c, r] = cur.split(',').map(Number);
-            const d = dist.get(cur);
-            const prev = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => dist.has(k) && dist.get(k) < d).sort((a, b) => dist.get(a) - dist.get(b))[0];
-            if (!prev) break;
-            path.unshift(prev); cur = prev;
-        }
+        for (let cur = to, guard = 0; cur !== from && guard < 120; guard++) { cur = dist.prev.get(cur); if (!cur) break; path.unshift(cur); }
         if (path[0] === from) return path;
     }
     return hexLine(from, to, [1e-6, 2e-6, -3e-6]);
@@ -2722,9 +2731,18 @@ function artShot(prof, three, noLos) {
     return sh;
 }
 // Les 3 tuiles consécutives du trajet qui finissent au point visé : [1 = la plus proche de la machine, 2, 3 = le point] ; null si hors du trajet (point à moins de 3 hex).
-function artTiles(sp, pt) {
+function artTiles(sp, pt, pick) {
     const line = hexLine(sp, pt, [1e-6, 2e-6, -3e-6]), d = line.length - 1;
-    return [d - 2, d - 1, d].map((i) => (i >= 1 ? line[i] : null));
+    const def = [d - 2, d - 1, d].map((i) => (i >= 1 ? line[i] : null));
+    if (!Array.isArray(pick)) return def;
+    // Trait le long d'un bord : deux tuiles possibles pour un même dé ; le tireur choisit celle qu'il garde.
+    const alt = artAlts(sp, pt);
+    return def.map((k, i) => (alt[i] && alt[i].includes(pick[i]) ? pick[i] : k));
+}
+// Pour chacune des 3 tuiles : les deux possibilités quand le trait passe exactement entre deux tuiles (sinon null).
+function artAlts(sp, pt) {
+    const a = hexLine(sp, pt, [1e-6, 2e-6, -3e-6]), b = hexLine(sp, pt, [-1e-6, -2e-6, 3e-6]), d = a.length - 1;
+    return [d - 2, d - 1, d].map((i) => (i >= 1 && a[i] !== b[i] ? [a[i], b[i]] : null));
 }
 // Capacités écrites entre parenthèses dans le nom de la fiche : « roquette (aL,mag) » → al, mag.
 function unitTags(name) {
@@ -4449,7 +4467,7 @@ io.on('connection', (socket) => {
         const f = findLine(name, payload?.unit);
         if (!f) return reply(ack, { success: false, message: 'Unité inconnue.' });
         const u = allBattleUnits().find((x) => x.id === f.id);
-        withAir(u, payload?.air, () => reply(ack, { success: true, tiles: orderReach(u, payload?.type === 'marche' ? 'marche' : 'depl') }));
+        withAir(u, payload?.air, () => { const t = orderReach(u, payload?.type === 'marche' ? 'marche' : 'depl'); reply(ack, { success: true, tiles: t, forbid: t.forbid || [] }); });
     });
 
     // Capacité de déplacement de n'importe quelle unité (amie ou adverse), depuis sa position actuelle : renseignement pour tous les joueurs
@@ -4464,7 +4482,8 @@ io.on('connection', (socket) => {
         if (!mine && !L.b.revealed && saved) L.b.orders[u.id] = { ...saved, air: undefined }; // choix « en vol / au sol » caché : valeur par défaut
         try {
             const dep = Math.max(0, u.line.dep);
-            reply(ack, { success: true, from: unitPos(u.id), dep, tiles: stopTiles(u, dep, false, null) });
+            const t = stopTiles(u, dep, false, null);
+            reply(ack, { success: true, from: unitPos(u.id), dep, tiles: t, forbid: t.forbid || [] });
         } finally { if (saved) L.b.orders[u.id] = saved; }
     });
     // Ordre du général : att (attaque −1 pour les unités à 6 hex), mvt (+3 hex), charge (+2 hex), ou null.
@@ -4705,7 +4724,7 @@ io.on('connection', (socket) => {
             if (!tile || !mapHas(...tile.split(',').map(Number))) return landingFail(ack, 'Touchez la tuile du point maximal du tir.');
             const d = hexDistance(sp, tile);
             if (d < 1 || d > ART_RANGE) return landingFail(ack, `Point trop loin (${d} hexagones, maximum ${ART_RANGE}).`);
-            f.pending = { id: u.id, tid: null, tile, three: artTiles(sp, tile), mode: 'art', d, adj: 0, los: (() => { const v = visionCheck(u, null, { tile }); return { ok: v.seen, reason: v.why }; })(), mods: [] };
+            f.pending = { id: u.id, tid: null, tile, three: artTiles(sp, tile, payload?.three), mode: 'art', d, adj: 0, los: (() => { const v = visionCheck(u, null, { tile }); return { ok: v.seen, reason: v.why }; })(), mods: [] };
             f.pending.mods = [{ k: 'nolos', label: `La machine ne voit pas le point visé${f.pending.los.ok ? '' : ` (${f.pending.los.reason})`} : sur un 4, la relance ne touche pas`, v: 0, on: !f.pending.los.ok }];
             return landingOk(ack);
         }
@@ -5269,4 +5288,4 @@ start().catch((err) => {
 });
 
 // Tests automatiques seulement (GAME_TEST=1) : accès direct à quelques fonctions de règle.
-if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, doorOk, onRoad, stopTiles, stopBlock, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
+if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, artAlts, doorOk, onRoad, stopTiles, stopBlock, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };

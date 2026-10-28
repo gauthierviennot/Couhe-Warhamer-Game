@@ -56,9 +56,13 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>§ 1 — fenêtre des fiches</b> : bouton 📖 Règles à côté des onglets Armées, Formules, Équipes et Sauvegardes ; onglet Sauvegardes avec les sauvegardes des fiches, des cartes et des jeux en cours.',
+    '<b>§ 1 — repères sur la carte</b> : tuiles interdites à portée en pointillés orange (aires de bonus comprises) ; contour clignotant de l’unité sélectionnée ou active ; fond des étiquettes jaune / bleu clair / gris selon la phase (ordres, déplacements, tirs).',
+    '<b>§ 4</b> : les marqueurs + appartiennent à la section centrale ; le bonus de section vaut aussi sur toutes les tuiles de débarquement de la section.',
+    '<b>§ 7 et Annexe B § 5</b> : à distance égale, les charges mutuelles avant les charges simples.',
+    '<b>Annexe B § 8</b> : charge mutuelle — arrêt sur la tuile au meilleur modificateur en avançant au maximum sur les tuiles successives de même modificateur, ou au milieu.',
+    '<b>Annexe E</b> : portée du tir affichée pendant la visée ; artillerie : quand deux tuiles sont possibles pour un même dé, le tireur choisit.',
 ]
-NEEDLES = ['<b>Fenêtre des fiches</b>']
+NEEDLES = ['<b>Repères sur la carte</b>', 'les marqueurs + appartiennent à la section centrale', 'les charges mutuelles d’abord, puis', '<b>charges mutuelles d’abord</b>', '<b>en avançant au maximum</b> si plusieurs', '<b>le tireur choisit</b>', '<b>Portée affichée</b>']
 
 
 def hl_par(el):
@@ -99,7 +103,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (27/10/2026, 1 h 55)', h2))
+S.append(P('Modifications depuis le dernier envoi (27/10/2026, 2 h 05)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
