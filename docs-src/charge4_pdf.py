@@ -74,6 +74,7 @@ s+=B(['Chaque tuile compte pour 1. En charge, <b>forêt et marais n’ont pas de
  '<b>Unités volantes en vol et unités qui sautent :</b> elles passent au-dessus des unités (sans gain de vision pour celles qui sautent).',
  '<b>Montagnes :</b> survolées en vol, franchies en saut ; infranchissables pour les autres.',
  '<b>Pont :</b> le pont est une tuile <b>orientée</b> qui relie les deux rives. Une unité au sol n’y entre et n’en sort que par ses <b>deux extrémités</b>, d’une rive à l’autre ; jamais par le côté (depuis la rive ou depuis l’eau).',
+ '<b>Fortification :</b> on y entre et on en sort seulement par sa <b>porte</b> (fortification à une entrée : une porte ; à deux entrées : deux portes opposées), sauf unités volantes en vol et unités qui sautent — comme un pont.',
  '<b>Eau :</b> seulement par un pont, sauf unités volantes en vol, unités qui sautent (sans s’y arrêter) et Saurus (BA), qui peuvent aussi s’y arrêter.',
  'La <b>cavalerie</b> ne monte pas sur une fortification, une demi-fortification ou un <b>village à toit plat</b> (elle n’y passe pas et ne s’y arrête pas).'])
 s.append(P('7. L’arrivée d’une charge simple',h2))

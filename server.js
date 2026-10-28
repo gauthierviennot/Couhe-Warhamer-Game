@@ -466,7 +466,9 @@ const metaOf = (map) => ({
     savedAt: map.savedAt || 0,
     cols: map.config.cols,
     rows: map.config.rows,
-    tiles: Object.keys(map.gridData || {}).length
+    tiles: Object.keys(map.gridData || {}).length,
+    // Sauvegarde d'un jeu en cours (carte + débarquement / bataille) : phase du jeu ; sinon carte seule.
+    game: map.landing?.phase && map.landing.phase !== 'off' ? map.landing.phase : (map.terrains?.landing?.phase && map.terrains.landing.phase !== 'off' ? map.terrains.landing.phase : null)
 });
 
 /* ------------------------------------------------------------------ */
@@ -595,7 +597,7 @@ function createSupabaseStorage() {
         },
 
         async listMaps() {
-            const res = await db.from('saved_maps').select('id,name,auto,author,saved_at,cols,rows,tiles');
+            const res = await db.from('saved_maps').select('id,name,auto,author,saved_at,cols,rows,tiles,game:terrains->landing->>phase');
             check(res);
             return res.data.map((row) => ({
                 id: row.id,
@@ -605,7 +607,8 @@ function createSupabaseStorage() {
                 savedAt: Number(row.saved_at),
                 cols: row.cols,
                 rows: row.rows,
-                tiles: row.tiles
+                tiles: row.tiles,
+                game: row.game && row.game !== 'off' ? row.game : null
             }));
         },
         async getMap(id) {
@@ -740,7 +743,7 @@ const mapsIndex = new Map(); // id -> métadonnées (sans la grille, pour rester
 
 const listMaps = () => [...mapsIndex.values()].sort((a, b) => b.savedAt - a.savedAt);
 
-async function saveMap({ id, name, auto = false }, author) {
+async function saveMap({ id, name, auto = false, withGame = true }, author) {
     const mapId = id && mapsIndex.has(id) ? id : crypto.randomUUID();
     const map = {
         id: mapId,
@@ -753,7 +756,7 @@ async function saveMap({ id, name, auto = false }, author) {
         gridData: state.gridData,
         // Débarquement en cours (zones, groupes, bonus, choix, unités posées, étendards) : tout est conservé ;
         // chacun ne voit ensuite que ce que les règles de visibilité de son équipe lui montrent.
-        landing: state.landing.phase === 'off' ? null : JSON.parse(JSON.stringify(state.landing))
+        landing: !withGame || state.landing.phase === 'off' ? null : JSON.parse(JSON.stringify(state.landing))
     };
     await storage.putMap(map);
     const meta = metaOf(map);
@@ -1824,7 +1827,10 @@ function stopBlock(tile, unit) {
     if (t?.removed) return 'Cette tuile n’existe plus sur la carte.';
     if ((t?.terrain ?? 'plain') === 'mountain') return 'Les montagnes sont infranchissables.';
     if (t?.object === 'village') return 'On ne s’arrête jamais dans un village simple (seulement à côté ; le village à toit plat est permis).';
-    if (/^c/i.test(String(unit?.line?.type || '')) && CAV_BLOCK.includes(t?.object)) return 'La cavalerie ne monte ni sur une fortification ni sur un village à toit plat.';
+    if (CAV_BLOCK.includes(t?.object)) {
+        if (/^c/i.test(String(unit?.line?.type || ''))) return 'La cavalerie ne monte ni sur une fortification ni sur un village à toit plat.';
+        if (unit?.line && isFlier(unit) && !flying(unit)) return 'Une unité volante restée au sol ne monte ni sur une fortification ni sur un village à toit plat (en vol, elle peut s’y poser).';
+    }
     if ((t?.terrain ?? 'plain') === 'water' && t?.object !== 'bridge' && !(army === 'saurus' && ba)) return 'Seules les unités saurus (BA) peuvent se tenir sur l’eau.';
     return null;
 }
@@ -1900,11 +1906,41 @@ function bridgeOk(a, b) {
     }
     return true;
 }
+// Chemin : tuile de chemin, ou pont dont au moins une des deux extrémités est un chemin (un pont isolé ne fait partie d'aucun chemin).
+function onRoad(k) {
+    const g = state.gridData[k];
+    if ((g?.terrain ?? 'plain') === 'path') return true;
+    if (g?.object !== 'bridge') return false;
+    const d = Number(g.dir) || 0;
+    return [d, (d + 3) % 6].some((x) => { const e = tileInDir(k, x); return e && (state.gridData[e]?.terrain ?? 'plain') === 'path'; });
+}
+// Calcul fait avec un choix « en vol / au sol » provisoire (avant que l'ordre soit donné) ; l'ordre existant est rétabli ensuite.
+function withAir(u, air, fn) {
+    const b = state.landing.b;
+    if (!isFlier(u) || typeof air !== 'boolean') return fn();
+    const prev = b.orders[u.id];
+    b.orders[u.id] = { ...(prev || { type: 'depl' }), air };
+    try { return fn(); } finally { if (prev) b.orders[u.id] = prev; else delete b.orders[u.id]; }
+}
+// Fortification : on y monte et on en descend seulement par sa porte (une entrée : direction dir ; deux entrées : dir et dir + 3),
+// sauf unités en vol ou qui sautent — comme un pont, la porte est un point de passage obligé.
+function doorOk(a, b) {
+    for (const [t, o] of [[a, b], [b, a]]) {
+        const g = state.gridData[t];
+        if (g?.object !== 'fortress' && g?.object !== 'fortress-half') continue;
+        const d = Number(g.dir) || 0;
+        const doors = g.object === 'fortress' ? [d] : [d, (d + 3) % 6];
+        if (!doors.some((x) => o === tileInDir(t, x))) return false;
+    }
+    return true;
+}
 function unitMob(u) {
     const k = String(u.line.kin || '');
     const fly = flying(u), jump = k === 'j';
     const ba = hasBA(u);
-    return { fly, jump, air: fly || jump, swim: ba && u.line.army === 'saurus', woods: ba && u.line.army === 'elfes_sylvains', cav: /^c/i.test(String(u.line.type || '')) };
+    const cav = /^c/i.test(String(u.line.type || ''));
+    // fortBan : ni fortification, ni demi-fortification, ni village à toit plat — la cavalerie, et une unité volante qui reste au sol (en vol, elle peut s'y poser).
+    return { fly, jump, air: fly || jump, swim: ba && u.line.army === 'saurus', woods: ba && u.line.army === 'elfes_sylvains', cav, fortBan: cav || (isFlier(u) && !fly) };
 }
 // Bonus d'armée (BA) : seulement pour les unités dont le nom porte « BA » entre parenthèses.
 const hasBA = (u) => !u?.line?.merc && unitTags(u?.line?.name).has('ba'); // mercenaires : jamais de bonus d'armée
@@ -1949,8 +1985,9 @@ function reachMap(u, limit, charge, through) {
                 if (ter === 'mountain') continue;
                 if (ter === 'water' && obj !== 'bridge' && !mob.swim) continue;
             }
-            if (mob.cav && CAV_BLOCK.includes(obj)) continue; // la cavalerie ne monte pas sur une fortification ni sur un village à toit plat
+            if (mob.fortBan && CAV_BLOCK.includes(obj)) continue; // la cavalerie ne monte pas sur une fortification ni sur un village à toit plat
             if (!mob.air && !mob.swim && !bridgeOk(key, nk)) continue; // pont : seulement par ses deux extrémités
+            if (!mob.air && !doorOk(key, nk)) continue; // fortification : seulement par sa porte
             let cost = 1;
             if (!charge && !mob.fly) { if (obj === 'forest' && !mob.woods) cost++; if (ter === 'swamp') cost++; } // déplacement −1 en forêt et marais, sauf charge et vol
             const nd = d + cost;
@@ -1990,7 +2027,7 @@ function failedChargeTiles(u, tp) {
         const dist = reachMap(u, R, true, th);
         let best = [], bd = Infinity;
         for (const [k] of dist) {
-            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)) || foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp)))) continue;
+            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)) || foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp)))) continue;
             const h = hexDistance(k, tp);
             if (h < bd) { best = [k]; bd = h; } else if (h === bd) best.push(k);
         }
@@ -2007,7 +2044,7 @@ function chargeFacets(u, tp) {
     const me = unitPos(u.id), mob = unitMob(u);
     const occ = new Set(allBattleUnits().filter((x) => x.id !== u.id).map((x) => unitPos(x.id)).filter(Boolean));
     const [c, r] = tp.split(',').map(Number);
-    const contact = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, u) && !(mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)));
+    const contact = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => mapHas(...k.split(',').map(Number)) && !occ.has(k) && !stopBlock(k, u) && !(mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)));
     let acc = new Map();
     for (const th of [false, true]) {
         const dist = reachMap(u, 60, true, th);
@@ -2038,7 +2075,7 @@ function chargeTiles(u, tp) {
         const dist = reachMap(u, lim, true, th);
         let best = [], bd = Infinity, bc = Infinity;
         for (const [k, d] of dist) {
-            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)))) continue;
+            if (k !== me && (occ.has(k) || stopBlock(k, u) || (mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)))) continue;
             const h = hexDistance(k, tp);
             if (h < bd || (h === bd && d < bc)) { best = [k]; bd = h; bc = d; } else if (h === bd && d === bc) best.push(k);
         }
@@ -2058,18 +2095,41 @@ function orderReach(u, type) {
 function stopTiles(u, R, isCharge, tp, through) {
     const me = unitPos(u.id);
     const mob = unitMob(u);
-    const dist = reachMap(u, R + 2, isCharge, through);
+    const dist = reachMap(u, R, isCharge, through);
+    // Bonus de chemin (+2, sauf vol et sauf charge) : seulement si le déplacement sans bonus peut déjà se terminer sur un chemin (ou un pont qui en
+    // fait partie) ; les 2 tuiles de bonus se font alors en suivant le chemin, depuis ce point.
+    const reach = new Map(dist);
+    if (!isCharge && !mob.fly) {
+        const foeBlock = new Set(allBattleUnits().filter((x) => x.team && u.team && x.team !== u.team && !flying(x)).map((x) => unitPos(x.id)).filter(Boolean));
+        const extra = new Map();
+        let front = [...dist].filter(([k]) => onRoad(k)).map(([k]) => k);
+        for (const k of front) extra.set(k, 0);
+        for (let step = 1; step <= 2 && front.length; step++) {
+            const next = [];
+            for (const k of front) {
+                const [c, r] = k.split(',').map(Number);
+                for (const [nc, nr] of hexNeighbors(c, r)) {
+                    const nk = `${nc},${nr}`;
+                    if (!mapHas(nc, nr) || extra.has(nk) || !onRoad(nk)) continue;
+                    if (!mob.jump && foeBlock.has(nk)) continue;
+                    if (!mob.swim && !bridgeOk(k, nk)) continue;
+                    if (!mob.jump && !doorOk(k, nk)) continue;
+                    if (mob.fortBan && CAV_BLOCK.includes(state.gridData[nk]?.object)) continue;
+                    extra.set(nk, step); next.push(nk);
+                    if (!reach.has(nk)) reach.set(nk, R + step);
+                }
+            }
+            front = next;
+        }
+    }
     const all = allBattleUnits();
     const occ = new Set(all.filter((x) => x.id !== u.id).map((x) => unitPos(x.id)).filter(Boolean));
     const foes = all.filter((x) => x.team && u.team && x.team !== u.team).map((x) => unitPos(x.id)).filter(Boolean);
     const out = [];
-    for (const [k, d] of dist) {
+    for (const [k] of reach) {
         if (k !== me) {
-            // route : +2 si le déplacement se termine dessus (sauf vol/saut et sauf charge)
-            const bonus = !isCharge && !mob.fly && (state.gridData[k]?.terrain ?? 'plain') === 'path' ? 2 : 0; // route +2 si on y termine (sauf vol ; pas en charge)
-            if (d > R + bonus) continue;
             if (occ.has(k) || stopBlock(k, u)) continue;
-            if (mob.cav && CAV_BLOCK.includes(state.gridData[k]?.object)) continue;
+            if (mob.fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)) continue;
         }
         if (isCharge) { if (hexDistance(k, tp) !== 1) continue; }
         else if (k !== me && foes.some((fp) => hexDistance(k, fp) <= 1 && groundLevel(k) === groundLevel(fp))) continue; // zone d'interdiction, sauf différence de hauteur
@@ -2297,6 +2357,7 @@ function chargePath(a, b, through) {
                     if (!air && ter === 'mountain') continue;
                     if (ter === 'water' && g.object !== 'bridge' && !swim) continue;
                     if (!air && !swim && !bridgeOk(k, nk)) continue; // pont : seulement par ses deux extrémités
+                    if (!air && !doorOk(k, nk)) continue; // fortification : seulement par sa porte
                 }
                 prev.set(nk, k); next.push(nk);
             }
@@ -2314,7 +2375,7 @@ function chargePath(a, b, through) {
 // (en contournant les unités, sinon à travers elles), sans tenir compte des unités posées sur ces tuiles de contact.
 function chargeInRange(u, tp, R, modes = [false, true]) {
     const [c, r] = tp.split(',').map(Number);
-    const near = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => !stopBlock(k, u) && !(unitMob(u).cav && CAV_BLOCK.includes(state.gridData[k]?.object)));
+    const near = hexNeighbors(c, r).map(([x, y]) => `${x},${y}`).filter((k) => !stopBlock(k, u) && !(unitMob(u).fortBan && CAV_BLOCK.includes(state.gridData[k]?.object)));
     for (const through of modes) { const dist = reachMap(u, R, true, through); if (near.some((k) => dist.has(k)) || near.includes(unitPos(u.id))) return true; }
     return false;
 }
@@ -4290,46 +4351,51 @@ io.on('connection', (socket) => {
         if (L.b.dead?.[f.id]) return landingFail(ack, 'Cette unité est détruite.');
         const me = unitPos(f.id);
         if (!me) return landingFail(ack, 'Unité non placée.');
+        // Unité volante : le choix « en vol / au sol » de cet ordre compte déjà pour les contrôles (portée de charge, tuile d'arrivée).
+        const prevOrder = L.b.orders[f.id];
+        const airChoice = isFlier(f) ? (o.air === false ? false : (o.air === true ? true : (prevOrder?.air ?? true))) : undefined;
+        if (isFlier(f)) L.b.orders[f.id] = { ...(prevOrder || { type: o.type }), air: airChoice };
+        const fail = (m) => { if (prevOrder) L.b.orders[f.id] = prevOrder; else delete L.b.orders[f.id]; return landingFail(ack, m); };
         const gord = genPower(f.owner);
         const nearGen = L.chev?.[f.owner] === f.id; // bénéficiaire désigné du pouvoir mvt +3 / charge +2
         const dep = Math.max(0, f.line.dep);
         const entry = { type: o.type };
         const caps = lineCaps(f.line);
-        if (o.type === 'charge' && !caps.cc) return landingFail(ack, 'Cette unité n’a pas d’attaque de corps à corps : pas de charge.');
+        if (o.type === 'charge' && !caps.cc) return fail('Cette unité n’a pas d’attaque de corps à corps : pas de charge.');
         if (o.type === 'tir') {
             // Tir court (3 hex) ou long (7 hex) pour les unités de tir ; ordre de tir unique pour l'artillerie (10 hex).
             const range = o.range ?? (caps.art && !caps.tir ? 'art' : null);
-            if (!['court', 'long', 'art'].includes(range)) return landingFail(ack, 'Choisissez tir court ou tir long.');
-            if (range === 'art' ? !caps.art : !caps.tir) return landingFail(ack, range === 'art' ? 'Cette unité n’est pas une artillerie.' : 'Cette unité n’a pas d’attaque de tir.');
+            if (!['court', 'long', 'art'].includes(range)) return fail('Choisissez tir court ou tir long.');
+            if (range === 'art' ? !caps.art : !caps.tir) return fail(range === 'art' ? 'Cette unité n’est pas une artillerie.' : 'Cette unité n’a pas d’attaque de tir.');
             entry.range = range;
         }
         if (o.type === 'charge' || (o.type === 'tir' && o.target != null)) { // tir : la cible se choisit au moment du tir (facultative ici)
             const t = findUnitAny(o.target);
-            if (!t || t.team === myTeam || !t.team) return landingFail(ack, 'Choisissez une unité de l’équipe adverse.');
+            if (!t || t.team === myTeam || !t.team) return fail('Choisissez une unité de l’équipe adverse.');
             const tp = unitPos(t.id);
-            if (!tp) return landingFail(ack, 'Cible non placée.');
+            if (!tp) return fail('Cible non placée.');
             const d = hexDistance(me, tp);
             const max = o.type === 'charge' ? 5 + (gord === 'charge' && nearGen ? 2 : 0) : ({ court: FIRE_SHORT, long: FIRE_LONG, art: ART_RANGE }[entry.range]);
-            if (o.type === 'charge') { const tt = chargeTargetOf({ team: myTeam }, t, true); if (!chargeInRange(f, unitPos(tt.id), max)) return landingFail(ack, `Cible hors de portée de charge (${max} tuiles au plus par un chemin autorisé jusqu’au contact${tt !== t ? ' de ses tirailleurs' : ''}).`); }
-            else if (d > max) return landingFail(ack, `Cible trop loin (${d} hexagones, maximum ${max}).`);
+            if (o.type === 'charge') { const tt = chargeTargetOf({ team: myTeam }, t, true); if (!chargeInRange(f, unitPos(tt.id), max)) return fail(`Cible hors de portée de charge (${max} tuiles au plus par un chemin autorisé jusqu’au contact${tt !== t ? ' de ses tirailleurs' : ''}).`); }
+            else if (d > max) return fail(`Cible trop loin (${d} hexagones, maximum ${max}).`);
             entry.target = t.id;
         } else if ((o.type === 'depl' || o.type === 'marche') && o.tile != null) {
             // Destination facultative : sans destination, le joueur choisit au moment des déplacements de bouger ou non.
             const tile = battleCell(o.tile);
-            if (!tile) return landingFail(ack, 'Tuile de destination invalide.');
+            if (!tile) return fail('Tuile de destination invalide.');
             const base = (o.type === 'marche' ? dep * 2 : dep) + (gord === 'mvt' && nearGen ? 3 : 0);
             const d = hexDistance(me, tile);
-            if (d > base) return landingFail(ack, `Destination trop loin (${d} hexagones, maximum ${base}).`);
+            if (d > base) return fail(`Destination trop loin (${d} hexagones, maximum ${base}).`);
             const blocked = stopBlock(tile, f);
-            if (blocked) return landingFail(ack, blocked);
+            if (blocked) return fail(blocked);
             entry.tile = tile;
         } else if (o.type === 'tirailleur') {
-            if (!/T/.test(String(f.line.type))) return landingFail(ack, 'Seules les unités tirailleurs (T) peuvent recevoir cet ordre.');
+            if (!/T/.test(String(f.line.type))) return fail('Seules les unités tirailleurs (T) peuvent recevoir cet ordre.');
             const tu = allBattleUnits().find((x) => x.id === f.id);
-            if (!screenedUnit(tu, false)) return landingFail(ack, 'Ordre tirailleur impossible : il faut une unité alliée de corps à corps ou mixte (pas au corps à corps) juste derrière les tirailleurs, qui les regarde (tirailleurs sur la tuile juste devant elle), et les tirailleurs tournés dans la même direction qu’elle.');
+            if (!screenedUnit(tu, false)) return fail('Ordre tirailleur impossible : il faut une unité alliée de corps à corps ou mixte (pas au corps à corps) juste derrière les tirailleurs, qui les regarde (tirailleurs sur la tuile juste devant elle), et les tirailleurs tournés dans la même direction qu’elle.');
         }
         // Unité volante : « en vol » (par défaut) ou « au sol », pour tout le tour.
-        if (isFlier(f)) entry.air = o.air === false ? false : (o.air === true ? true : (L.b.orders[f.id]?.air ?? true));
+        if (isFlier(f)) entry.air = airChoice;
         L.b.orders[f.id] = entry;
         if (entry.type === 'charge') setChargeSight(f.id, true);
         landingOk(ack);
@@ -4372,7 +4438,7 @@ io.on('connection', (socket) => {
         const u = f && allBattleUnits().find((x) => x.id === f.id);
         if (!u || !unitPos(u.id)) return reply(ack, { success: false, message: 'Unité inconnue.' });
         const R = chargeRangeOf(u);
-        reply(ack, { success: true, max: R, targets: foesOf(u).filter((t) => unitPos(t.id) && chargeInRange(u, unitPos(chargeTargetOf(u, t, true).id), R)).map((t) => t.id) });
+        withAir(u, payload?.air, () => reply(ack, { success: true, max: R, targets: foesOf(u).filter((t) => unitPos(t.id) && chargeInRange(u, unitPos(chargeTargetOf(u, t, true).id), R)).map((t) => t.id) }));
     });
 
     // Portée réelle (trajet compris) d'une de mes unités pour un ordre de déplacement ou de marche forcée.
@@ -4383,7 +4449,7 @@ io.on('connection', (socket) => {
         const f = findLine(name, payload?.unit);
         if (!f) return reply(ack, { success: false, message: 'Unité inconnue.' });
         const u = allBattleUnits().find((x) => x.id === f.id);
-        reply(ack, { success: true, tiles: orderReach(u, payload?.type === 'marche' ? 'marche' : 'depl') });
+        withAir(u, payload?.air, () => reply(ack, { success: true, tiles: orderReach(u, payload?.type === 'marche' ? 'marche' : 'depl') }));
     });
 
     // Capacité de déplacement de n'importe quelle unité (amie ou adverse), depuis sa position actuelle : renseignement pour tous les joueurs
@@ -4981,6 +5047,11 @@ io.on('connection', (socket) => {
         if (socket.data.isAdmin) socket.emit('maps-list', listMaps());
     });
 
+    // Onglet « Sauvegardes » des fiches : cartes et jeux en cours enregistrés (le MJ).
+    socket.on('saves-list', (payload, ack) => {
+        if (!requireAdmin(socket, ack)) return;
+        reply(ack, { success: true, maps: listMaps(), game: state.landing.phase !== 'off' ? state.landing.phase : null });
+    });
     socket.on('save-map', guarded(async (payload, ack) => {
         if (!requireAdmin(socket, ack)) return;
 
@@ -4997,9 +5068,12 @@ io.on('connection', (socket) => {
             if (existing) return reply(ack, { success: false, code: 'exists', id: existing.id });
         }
 
-        await saveMap({ id, name }, socket.data.name);
+        // kind : « carte » = terrain seul ; « jeu » = carte + jeu en cours (débarquement, bataille) ; sans précision : comme avant (jeu compris s'il y en a un).
+        const kind = payload?.kind === 'carte' ? 'carte' : (payload?.kind === 'jeu' ? 'jeu' : null);
+        if (kind === 'jeu' && state.landing.phase === 'off') return reply(ack, { success: false, message: 'Aucun jeu en cours à enregistrer.' });
+        await saveMap({ id, name, withGame: kind !== 'carte' }, socket.data.name);
         broadcastMaps();
-        reply(ack, { success: true, message: `Carte « ${name} » enregistrée.` });
+        reply(ack, { success: true, message: kind === 'jeu' ? `Jeu en cours « ${name} » enregistré.` : `Carte « ${name} » enregistrée.` });
     }));
 
     socket.on('load-map', guarded(async (payload, ack) => {
@@ -5195,4 +5269,4 @@ start().catch((err) => {
 });
 
 // Tests automatiques seulement (GAME_TEST=1) : accès direct à quelques fonctions de règle.
-if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, stopBlock, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };
+if (process.env.GAME_TEST) global.__srv = { get state() { return state; }, doorOk, onRoad, stopTiles, stopBlock, orderRoutes, bridgeOk, reachMap, chargePath, hexTrace, hexLine, artShot, unitHp, artTiles, applyArtDamage, chargeFacets, screenOf, screenedUnit, fireFinished, emitLanding, chargeInRange, genPower, moveRange, terrainBA, fireMods, unitMob, hasBA, genRadius, allBattleUnits, orderReach };

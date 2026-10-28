@@ -110,7 +110,47 @@ setTimeout(async () => {
     B.pos[CV] = '7,6'; B.orders[CV] = { type: 'depl', tile: '7,6' };
     const dc = S.reachMap(CU, 4, false);
     ok(!dc.has('8,6') && !dc.has('9,6'), 'cavalerie : elle ne monte pas sur le village à toit plat ni sur la fortification');
-    ok(!S.stopBlock('8,6', FU), 'une unité qui n’est pas de la cavalerie peut se tenir sur le village à toit plat');
+    ok(!S.stopBlock('8,6', FU) && !S.stopBlock('9,6', FU), 'unité volante en vol : elle peut se poser sur le village à toit plat et la fortification');
+    B.orders[F].air = false;
+    ok(S.stopBlock('8,6', FU) && S.stopBlock('9,6', FU), 'unité volante restée au sol : ni village à toit plat ni fortification');
+    { for (const id of Object.keys(B.pos)) if (['7,7', '8,7'].includes(B.pos[id])) B.pos[id] = '20,5';
+      B.pos[F] = '7,7'; const dg = S.reachMap(FU, 3, false); ok(!dg.has('8,6') && !dg.has('9,6'), 'volante au sol : elle ne monte pas sur le village à toit plat ni sur la fortification');
+      B.orders[F].air = true; const dv = S.reachMap(FU, 3, false); ok(dv.has('8,6') && dv.has('9,6'), 'volante en vol : elle les survole et peut s’y poser'); }
+    // Porte de la fortification (9,6, une entrée, orientée vers l'est : porte vers 10,6) : passage obligé sauf vol et saut.
+    { ok((S.state.gridData['9,6'].dir || 0) === 0 && S.doorOk('10,6', '9,6') && !S.doorOk('9,7', '9,6') && !S.doorOk('9,6', '8,6'), 'fortification : on n’y entre et on n’en sort que par sa porte');
+      const EU = S.allBattleUnits().find((x) => x.id === E1);
+      for (const id of Object.keys(B.pos)) if (['9,7', '10,6', '10,7'].includes(B.pos[id])) B.pos[id] = '20,6';
+      B.pos[E1] = '9,7'; B.orders[E1] = { type: 'depl', tile: '9,7' };
+      const de = S.reachMap(EU, 3, false);
+      ok(de.get('9,6') === 2, 'infanterie collée à la fortification par le côté : elle passe par la porte (2 tuiles au lieu de 1) (' + de.get('9,6') + ')');
+      B.orders[F].air = true; B.pos[F] = '9,7'; B.pos[E1] = '20,7';
+      ok(S.reachMap(FU, 3, false).get('9,6') === 1, 'unité volante en vol : pas besoin de la porte'); }
+    // Carte de la capture du MJ (décalée de 6 rangées) : cL (dep 3) en 2,14 ; rivière ; pont gauche (axe NO-SE) en 1,16 ; pont du milieu (axe NE-SO) en 3,17 ;
+    // chemins sur la rangée 18. Un pont relié à un chemin fait partie du chemin.
+    { const all = []; for (let x = 0; x < 9; x++) for (let y = 12; y < 20; y++) all.push(`${x},${y}`);
+      T2(all, 'plain'); mj.listeners('edit-tiles')[0]({ testForce: true, action: 'object', object: null, keys: all });
+      T2(['0,16', '1,16', '2,16', '3,16', '5,16', '3,17', '4,17', '5,17'], 'water');
+      T2(['1,18', '2,18', '3,18', '4,18', '5,18'], 'path'); T2(['1,14'], 'hill');
+      O2(['1,16'], 'bridge'); mj.listeners('rotate-object')[0]({ key: '1,16', testForce: true });
+      O2(['3,17'], 'bridge'); mj.listeners('rotate-object')[0]({ key: '3,17', testForce: true }); mj.listeners('rotate-object')[0]({ key: '3,17', testForce: true });
+      let i = 0; for (const u of S.allBattleUnits()) if (u.id !== CV) B.pos[u.id] = `21,${i++ % 20}`;
+      B.pos[CV] = '2,14'; B.orders[CV] = { type: 'depl', tile: '2,14' };
+      ok(S.onRoad('3,17') && !S.onRoad('1,16'), 'pont du milieu relié à un chemin : il fait partie du chemin ; pont de gauche isolé : non');
+      const st = new Set(S.stopTiles(CU, 3, false, null));
+      ok(st.has('1,16'), 'pont de gauche atteint en 3 tuiles par son extrémité nord-ouest');
+      ok(!st.has('3,17'), 'pont du milieu (4 tuiles) : hors de portée — le déplacement sans bonus (3) n’atteint aucun chemin');
+      ok(!st.has('3,18') && !st.has('2,18') && !st.has('1,18'), 'chemins au sud de la rivière (5 tuiles) : hors de portée (pas de chemin atteint en 3)');
+      ok(!st.has('1,17') && !st.has('2,17'), 'tuiles ordinaires au sud de la rivière (4 tuiles) : hors de portée');
+      // Chemin atteint sans bonus (à 1 tuile) : les 2 tuiles de bonus se font en suivant le chemin.
+      T2(['3,14', '4,14', '5,14', '6,14', '7,14', '8,14'], 'path');
+      const st2 = new Set(S.stopTiles(CU, 3, false, null));
+      ok(st2.has('7,14') && !st2.has('8,14'), 'chemin atteint en 1 : on le suit jusqu’à 5 tuiles (3 + 2), pas au-delà');
+      ok(!st2.has('6,12') && !st2.has('7,13'), 'hors du chemin, pas de bonus (tuiles à 4 ou 5 hors chemin refusées)');
+      // Ordre des bonus : marche forcée (3 × 2) + général (+3) = 9, puis chemin +2 = 11 sur le chemin.
+      const rowRoad = []; for (let x = 3; x <= 16; x++) rowRoad.push(`${x},14`); T2(rowRoad, 'path');
+      const st3 = new Set(S.stopTiles(CU, 3 * 2 + 3, false, null));
+      ok(st3.has('13,14') && !st3.has('14,14'), 'marche forcée + général + chemin : 3 × 2 + 3 + 2 = 11 tuiles au plus sur le chemin');
+    }
   }
   console.log(`\n${nok} OK, ${nko} FAIL`);
   process.exit(0);

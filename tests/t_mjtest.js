@@ -65,6 +65,11 @@ setTimeout(async () => {
     const pe = BB.pos[E] || S.state.landing.placed[E];
     const hd = (a2, b2) => { const cube = (k) => { const [c0, r0] = k.split(',').map(Number); const x = c0 - (r0 - (r0 & 1)) / 2; return [x, -x - r0, r0]; }; const A2 = cube(a2), B2 = cube(b2); return Math.max(...A2.map((v, i) => Math.abs(v - B2[i]))); };
     ok(hd(pe, '5,10') === 1, 'une seule facette possible : la charge se résout seule, l’unité est au contact (' + pe + ')'); }
+  // Sauvegardes : carte seule et jeu en cours
+  { let r1 = await mj.call('save-map', { name: 'Carte seule', kind: 'carte' }); let r2 = await mj.call('save-map', { name: 'Partie du soir', kind: 'jeu' });
+    const ls = await mj.call('saves-list', {}); const c1 = ls.maps.find((m) => m.name === 'Carte seule'), g1 = ls.maps.find((m) => m.name === 'Partie du soir');
+    ok(r1.success && r2.success && c1 && !c1.game && g1 && g1.game, 'sauvegardes : une carte seule et un jeu en cours (' + (g1 && g1.game) + ')');
+    const rb = await b.call('saves-list', {}); ok(!rb.success, 'liste des sauvegardes réservée au MJ'); }
   console.log(`\n${nok} OK, ${nko} FAIL`);
   process.exit(0);
 }, 300);

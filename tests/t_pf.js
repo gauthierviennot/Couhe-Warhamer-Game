@@ -77,11 +77,14 @@ setTimeout(async()=>{
  await mj.call('landing-goto',{phase:'orders'});
  // 4 route à dep+2
  setT(nb(bc,br),'plain');
- const far=`${bc+dep+2},${br}`; setT([far],'path');
+ // chemin atteint sans bonus (à dep tuiles) puis suivi sur 2 tuiles ; un chemin isolé à dep+2 n'est pas atteignable
+ const far=`${bc+dep+2},${br}`; setT([`${bc+dep},${br}`,`${bc+dep+1},${br}`,far],'path');
+ const lone=`${bc},${br+dep+2}`; setT([lone],'path');
  await __ready(b, L);await __ready(c, L);
  r=await mj.call('landing-move',{});
- al=L(b).m.allow[ub[0]];console.log('route à',hd(far,tb),al.includes(far));
- ok(hd(far,tb)===dep+2?al.includes(far):true,'route : +2 si on termine dessus');
+ al=L(b).m.allow[ub[0]];console.log('chemin à',hd(far,tb),al.includes(far),'isolé à',hd(lone,tb),al.includes(lone));
+ ok(hd(far,tb)===dep+2?al.includes(far):true,'chemin atteint sans bonus puis suivi : +2');
+ ok(hd(lone,tb)===dep+2?!al.includes(lone):true,'chemin isolé hors de portée sans bonus : pas atteignable');
  // 5 eau sans pont
  await mj.call('landing-goto',{phase:'orders'});
  setT([far],'plain');setT([`${bc+1},${br}`],'water');

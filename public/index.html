@@ -539,7 +539,7 @@
     <div id="fichesOverlay" class="fiches-overlay" hidden>
         <div class="fiches-bar">
             <b id="fichesTitle">📜 Fiches d'armée</b>
-            <button class="btn btn-primary btn-small" data-fiche="rules" id="btnRules" title="Consulter les règles du jeu (plan déroulant et recherche)">📖 Règles</button>
+            <button class="btn btn-primary btn-small" data-fiche="rules" id="btnRules" hidden title="Consulter les règles du jeu (plan déroulant et recherche)">📖 Règles</button>
             <span class="fiches-modes">
                 <button class="btn btn-secondary btn-small" data-fiche="mini" title="Fenêtre miniature : la carte reste visible" aria-label="Fenêtre miniature">🗗</button>
                 <button class="btn btn-secondary btn-small" data-fiche="bar" title="Réduire en barre" aria-label="Réduire en barre">—</button>
@@ -4757,14 +4757,14 @@
         }
 
         // Charge : le joueur touche l'unité adverse sur la carte, puis le bouton « Charger » posé à côté d'elle.
-        function startChargePick(u) {
+        function startChargePick(u, air) {
             const gord = genAliveMine() ? LAND.view.b?.gorders?.[myKey()] : null;
             const max = gord === 'charge' && LAND.view.chev?.[myKey()] === u.id ? 7 : 5; // charge +2 : seulement l'unité désignée par le général
             // Cibles possibles calculées par le serveur : distance de charge par un chemin autorisé (contournement, sinon traversée sans voir).
-            landEmit('battle-charge-targets', { unit: u.id }).then((r) => {
+            landEmit('battle-charge-targets', { unit: u.id, ...(typeof air === 'boolean' ? { air } : {}) }).then((r) => {
                 if (!r.success) return;
-                if (!r.targets.length) return toast(`Aucune unité adverse à portée de charge (${r.max} tuiles au plus par un chemin autorisé).`, true);
-                LAND.pick = { unit: u.id, type: 'charge', max: r.max, targets: r.targets };
+                if (!r.targets.length) return toast(`Aucune unité adverse à portée de charge (${r.max} tuiles au plus par un chemin autorisé${air === false ? ', au sol' : ''}).`, true);
+                LAND.pick = { unit: u.id, type: 'charge', max: r.max, targets: r.targets, air };
                 updateBatUI();
                 requestDraw();
             });
@@ -4788,15 +4788,25 @@
             hideMapConfirm();
             updateBatUI();
             requestDraw();
-            landEmit('battle-order', { unit: u.id, order: { type: 'charge', target: t.id } }).then((r) => {
+            landEmit('battle-order', { unit: u.id, order: { type: 'charge', target: t.id, ...(typeof pk.air === 'boolean' ? { air: pk.air } : {}) } }).then((r) => {
                 if (!r.success) return;
                 const o = LAND.view.b?.orders?.[u.id];
-                toast(`Charge sur ${unitLbl(t)}${o ? chargePicto(o, false) : ''}`);
-                if (isFlierU(u)) setTimeout(() => askAir(u), 50);
+                toast(`Charge sur ${unitLbl(t)}${typeof pk.air === 'boolean' ? (pk.air ? ' · ✈️ en vol' : ' · 🦶 au sol') : ''}${o ? chargePicto(o, false) : ''}`);
                 if (LAND.reach) { LAND.reach = null; requestDraw(); }
             });
         }
 
+        // Unité volante : pour une charge ou un déplacement, le joueur choisit d'abord « en vol » ou « au sol » (deux boutons à côté d'elle) :
+        // au sol, elle se déplace comme une unité au sol (ni fortification, ni village à toit plat) ; en vol, elle peut s'y poser.
+        function chooseAir(u, go) {
+            if (!isFlierU(u)) return go(undefined);
+            const cur = LAND.view.b?.orders?.[u.id]?.air !== false;
+            showMapConfirm({ unit: u.id, buttons: [
+                { label: '✈️ En vol', cls: cur ? 'ok' : '', fn: () => { hideMapConfirm(); go(true); } },
+                { label: '🦶 Au sol', cls: cur ? '' : 'ok', fn: () => { hideMapConfirm(); go(false); } }
+            ] });
+            toast('Unité volante : en vol ou au sol pour cet ordre ?');
+        }
         // Unité volante (v, vs) : « en vol » (par défaut) ou « au sol », choisi à chaque ordre par deux boutons posés à côté d'elle.
         const isFlierU = (u) => u && (u.kin === 'v' || u.kin === 'vs');
         function askAir(u) {
@@ -4809,7 +4819,7 @@
         function sendOrder(u, order) {
             return landEmit('battle-order', { unit: u.id, order }).then((r) => {
                 if (r.success) toast(order ? 'Ordre enregistré.' : 'Ordre effacé.');
-                if (r.success && order && isFlierU(u)) setTimeout(() => askAir(u), 50);
+                if (r.success && order && isFlierU(u) && !['charge', 'depl', 'marche'].includes(order.type)) setTimeout(() => askAir(u), 50); // charge et déplacement : choisi avant l'ordre
                 if (r.success && order && (order.type === 'depl' || order.type === 'marche')) showReach(u, order.type);
                 else if (LAND.reach) { LAND.reach = null; requestDraw(); }
                 return r;
@@ -4851,11 +4861,12 @@
             // Ordres selon les capacités de la fiche : charge = attaque de corps à corps ; tir court / long = attaque de tir ; artillerie = un seul ordre de tir.
             const caps = u.caps || { cc: true, tir: false, art: false };
             const btns = [];
-            if (caps.cc) btns.push({ label: '⚔️ Charge : touchez ensuite la cible sur la carte', cls: 'btn-dark', fn: () => startChargePick(u) });
+            if (caps.cc) btns.push({ label: '⚔️ Charge : touchez ensuite la cible sur la carte', cls: 'btn-dark', fn: () => chooseAir(u, (air) => startChargePick(u, air)) });
             if (caps.tir) btns.push({ label: '🏹 Tir court (3 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'court' }) }, { label: '🏹 Tir long (7 hexagones, malus +3)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'long' }) });
             if (caps.art) btns.push({ label: '💥 Tir d’artillerie (10 hexagones)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tir', range: 'art' }) });
-            btns.push({ label: `👣 Déplacement (dep ${u.dep}, bouger ou non au moment voulu)`, cls: 'btn-dark', fn: () => sendOrder(u, { type: 'depl' }) },
-                { label: '🏃 Marche forcée (dep × 2, pas d’attaque)', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'marche' }) });
+            const withAirO = (o) => (air) => sendOrder(u, typeof air === 'boolean' ? { ...o, air } : o);
+            btns.push({ label: `👣 Déplacement (dep ${u.dep}, bouger ou non au moment voulu)`, cls: 'btn-dark', fn: () => chooseAir(u, withAirO({ type: 'depl' })) },
+                { label: '🏃 Marche forcée (dep × 2, pas d’attaque)', cls: 'btn-dark', fn: () => chooseAir(u, withAirO({ type: 'marche' })) });
             const cur0 = LAND.view.b?.orders?.[unitId];
             if (cur0 && (cur0.type === 'depl' || cur0.type === 'marche')) showReach(u, cur0.type); else if (LAND.reach) { LAND.reach = null; requestDraw(); }
             if (/T/.test(u.type || '')) btns.push({ label: '🪶 Tirailleur', cls: 'btn-dark', fn: () => sendOrder(u, { type: 'tirailleur' }) });
@@ -6228,7 +6239,7 @@
         /* ============================================================ */
 
         // Le serveur reste seul juge de ce que chacun peut voir ; cette page ne fait que relayer les messages.
-        const FICHES_EVENTS = new Set(['fiches-load', 'fiches-pick', 'fiches-save', 'fiches-diag', 'fiches-team', 'fiches-merc', 'fiches-freeze', 'fiches-snaps', 'fiches-snap-save', 'fiches-snap-load', 'fiches-snap-rename', 'fiches-snap-delete', 'fiches-export', 'fiches-import', 'landing-standard']);
+        const FICHES_EVENTS = new Set(['fiches-load', 'fiches-pick', 'fiches-save', 'fiches-diag', 'fiches-team', 'fiches-merc', 'fiches-freeze', 'fiches-snaps', 'fiches-snap-save', 'fiches-snap-load', 'fiches-snap-rename', 'fiches-snap-delete', 'fiches-export', 'fiches-import', 'landing-standard', 'saves-list', 'save-map', 'load-map', 'rename-map', 'delete-map', 'export-map']);
 
         function fichesPost(message) {
             try { $('fichesFrame').contentWindow?.postMessage(message, location.origin); } catch { /* fenêtre fermée */ }
@@ -6336,6 +6347,7 @@
             $('fichesFrame').hidden = on;
             $('fichesTitle').textContent = on ? '📖 Règles du jeu' : '📜 Fiches d\'armée';
             $('btnRules').textContent = on ? '📜 Fiches' : '📖 Règles';
+            $('btnRules').hidden = !on;
             $('btnRules').title = on ? 'Revenir aux fiches d’armée' : 'Consulter les règles du jeu (plan déroulant et recherche)';
         }
 
@@ -6385,6 +6397,8 @@
             if (data.type === 'fiches:ready') {
                 const open = state.fichesOpenTarget; state.fichesOpenTarget = null;
                 fichesPost({ type: 'fiches:init', name: state.username, isAdmin: state.isAdmin, access: state.fichesAccess !== false, open });
+            } else if (data.type === 'fiches:rules') {
+                showRules(true);
             } else if (data.type === 'fiches:req' && FICHES_EVENTS.has(data.event)) {
                 request(data.event, data.payload, 30000).then((res) => fichesPost({ type: 'fiches:res', rid: data.rid, res }));
             }

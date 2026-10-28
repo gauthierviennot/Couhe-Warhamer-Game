@@ -54,7 +54,8 @@ Déroulement : 1er tour = placement (mêmes règles de portée que la simulation
 - Aide « Règles » (B48) : `public/regles.html` est régénéré par `docs-src/master.py` (via `export_html.py`) en même temps que REGLES-COMPLETES.pdf : toujours livrer les deux ensemble après une modification des règles.
 - 26/10 (22 h) : journal B49-B51 (fenêtres déplaçables, pas de plein écran sur ordinateur, chevron pendant les ordres, flèches de charge, détail des charges pas à pas, mode test dans toutes les phases avec bandeau du joueur incarné).
 - Banc d'essai navigateur (B53) : `node tests/navigateur/film.js` lance server.js avec le faux socket.io et ouvre index.html dans Chromium (playwright), relié par une passerelle ; `window.__landDebug` (units, view, openPanel, film) sert aux vérifications. Permet enfin de tester l'interface ici (captures dans tests/navigateur/shots/).
-- À faire au prochain envoi : bouton « 📖 Règles » à côté des onglets Armées / Formules / Équipes / Sauvegardes des fiches ; onglet Sauvegardes donnant accès aux sauvegardes des fiches, des cartes et des jeux en cours.
+- FAIT (B67) : bouton « 📖 Règles » dans les onglets des fiches ; onglet Sauvegardes = fiches + cartes + jeux en cours.
+- Règles du 27/10 (nuit) : ponts orientés, portes des fortifications, cavalerie et volantes au sol (ni fortification ni toit plat), bonus de chemin (ordre : marche forcée, général, chemin), placement = tuile d'arrivée seule ; annexe F : grandes tailles et toit plat à confirmer.
 - 26/10 (23 h) : ponts orientés (B54) ; unité déjà chargée (B55, `t_charge3.js`).
 
 ## 6. Questions encore ouvertes

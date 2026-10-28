@@ -137,6 +137,7 @@ td.name{z-index:3}
       <button id="tabF" class="tab" data-a="tab-form">Formules</button>
       <button id="tabP" class="tab" data-a="tab-players" style="display:none">Équipes</button>
       <button id="tabS" class="tab" data-a="tab-saves" style="display:none">Sauvegardes</button>
+      <button id="tabR" class="tab" data-a="rules" title="Consulter les règles du jeu (plan déroulant et recherche)">📖 Règles</button>
       <button id="tabH" class="tab" data-a="tab-help" style="display:none" title="Rappel des actions du MJ" aria-label="Aide MJ">ℹ️</button>
       <span id="mjBadge" class="badge mj">MJ</span>
       <span id="dbBadge" class="badge">local</span><span class="badge" title="Version du fichier fiches.html">v28-oct-23h40</span>
@@ -1201,6 +1202,8 @@ function onClick2(e){
     case 'openpartner':if(S.partner)openFromLink(S.partner.army,S.partner.legion);break;
     case 'unit-std':{const t=S.uc;if(!t||!t.id)break;hostReq('landing-standard',{unit:t.id,on:!t.std}).then(r=>{if(!r.success)return toast(r.message||'Action impossible.');t.std=!t.std;t.stdUsed+=t.std?1:-1;const b=document.getElementById('stdBox');if(b)b.innerHTML=stdBoxHtml();toast(t.std?'Étendard attribué.':'Étendard retiré.');});break;}
     case 'snap-save':case 'snap-over':case 'snap-load':case 'snap-ren':case 'snap-del':case 'snap-export':case 'snap-exp':case 'snap-import':if(isMJ())snapAction(a,el);break;
+    case 'map-save':case 'map-over':case 'map-load':case 'map-ren':case 'map-del':case 'map-exp':if(isMJ())mapAction(a,el);break;
+    case 'rules':parent.postMessage({type:'fiches:rules'},location.origin);break;
     case 'ft-open':openFamEditor(el.dataset.fam);break;
     case 'fam-dup':if(isMJ())famDuplicate(el.dataset.fam);break;
     case 'fam-del':if(isMJ())famDelete(el.dataset.fam);break;
@@ -1582,17 +1585,47 @@ async function downloadJson(filename,obj){
 }
 const fileSlug=t=>String(t||'fiches').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'fiches';
 const fmtDate=t=>{try{return new Date(t).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'});}catch(e){return '';}};
-async function loadSnaps(){const r=await hostReq('fiches-snaps',{});if(r.success){S.snaps=r.list;S.snapCur=r.current;}else{S.snaps=[];toast(r.message||'Liste indisponible.');}if(S.tab==='saves')render();}
+async function loadSnaps(){const r=await hostReq('fiches-snaps',{});if(r.success){S.snaps=r.list;S.snapCur=r.current;}else{S.snaps=[];toast(r.message||'Liste indisponible.');}
+  const m=await hostReq('saves-list',{});S.maps=m.success?m.maps:[];S.gameNow=m.success?m.game:null;
+  if(S.tab==='saves')render();}
+// Cartes (terrain seul) et jeux en cours (carte + débarquement ou bataille) enregistrés sur le serveur.
+const GAME_PHASE={zones:'zones',choose:'choix des zones',place:'dépôt',locked:'débarquement verrouillé',bplace:'placement de bataille',orders:'ordres',move:'déplacements',fire:'tirs'};
+function renderMapSaves(){
+  const all=(S.maps||[]).slice().sort((a,b)=>b.savedAt-a.savedAt);
+  const card=(m,kind)=>`<div class="card"><b>${esc(m.name)}</b>${m.auto?'<span class="tag">auto</span>':''}<div class="small">${esc(fmtDate(m.savedAt))}${m.author?' · '+esc(m.author):''} · ${m.cols}×${m.rows}${m.game?' · '+esc(GAME_PHASE[m.game]||m.game):''}</div>
+    <div class="row" style="margin:8px 0 0"><button class="btn pri" data-a="map-load" data-id="${esc(m.id)}" data-k="${kind}">Charger</button><button class="btn" data-a="map-over" data-id="${esc(m.id)}" data-k="${kind}" title="Remplacer par l'état actuel">💾 Écraser</button><button class="btn" data-a="map-ren" data-id="${esc(m.id)}">✏️</button><button class="btn" data-a="map-exp" data-id="${esc(m.id)}">⬇️</button><button class="btn" data-a="map-del" data-id="${esc(m.id)}">🗑️</button></div></div>`;
+  let h='<h1 style="margin-top:18px">Sauvegardes des cartes</h1><p class="sub">La carte seule (terrains, décors, marqueurs), sans débarquement ni bataille.</p>';
+  h+=`<div class="card"><div class="row" style="margin:0"><input id="mapName" class="ft" type="text" maxlength="60" placeholder="Nom de la carte" style="flex:1;min-width:150px"><button class="btn pri" data-a="map-save" data-k="carte">💾 Enregistrer la carte</button></div></div>`;
+  const maps=all.filter(m=>!m.game);h+=maps.length?maps.map(m=>card(m,'carte')).join(''):'<div class="hint">Aucune carte enregistrée.</div>';
+  h+=`<h1 style="margin-top:18px">Sauvegardes des jeux en cours</h1><p class="sub">La carte et tout le jeu en cours : débarquement, placements, ordres, positions, pertes. Jeu actuel : <b>${S.gameNow?esc(GAME_PHASE[S.gameNow]||S.gameNow):'aucun'}</b>.</p>`;
+  h+=`<div class="card"><div class="row" style="margin:0"><input id="gameName" class="ft" type="text" maxlength="60" placeholder="Nom de la sauvegarde du jeu" style="flex:1;min-width:150px"><button class="btn pri" data-a="map-save" data-k="jeu" ${S.gameNow?'':'disabled'}>💾 Enregistrer le jeu en cours</button></div></div>`;
+  const games=all.filter(m=>m.game);h+=games.length?games.map(m=>card(m,'jeu')).join(''):'<div class="hint">Aucun jeu en cours enregistré.</div>';
+  return h;
+}
+async function mapAction(a,el){
+  const id=el.dataset.id,kind=el.dataset.k;const m=(S.maps||[]).find(x=>x.id===id);
+  const done=async r=>{toast(r.message||(r.success?'Fait.':'Action impossible.'));await loadSnaps();};
+  if(a==='map-save'){const name=cleanName(mval(kind==='jeu'?'gameName':'mapName'),60);if(!name)return toast('Donnez un nom à la sauvegarde.');
+    const r=await hostReq('save-map',{name,kind});
+    if(r.code==='exists'){openModal('Remplacer la sauvegarde ?',`<div>« ${esc(name)} » existe déjà. La remplacer par l'état actuel ?</div>`,[{label:'Annuler',fn:closeModal},{label:'Remplacer',cls:'pri',fn:async()=>{closeModal();done(await hostReq('save-map',{name,kind,id:r.id}));}}]);return;}
+    return done(r);}
+  if(a==='map-over'){openModal('Écraser la sauvegarde ?',`<div>« ${esc(m?m.name:'')} » sera remplacée par ${kind==='jeu'?'la carte et le jeu en cours':'la carte actuelle'}.</div>`,[{label:'Annuler',fn:closeModal},{label:'Écraser',cls:'pri',fn:async()=>{closeModal();done(await hostReq('save-map',{name:m.name,id,kind}));}}]);return;}
+  if(a==='map-load'){openModal('Charger cette sauvegarde ?',`<div>« ${esc(m?m.name:'')} » remplacera ${kind==='jeu'?'la carte et le jeu en cours':'la carte (le jeu en cours est arrêté)'} pour <b>tous les joueurs</b>. Une sauvegarde automatique de l'état actuel est créée avant.</div>`,[{label:'Annuler',fn:closeModal},{label:'Charger',cls:'pri',fn:async()=>{closeModal();done(await hostReq('load-map',{id}));}}]);return;}
+  if(a==='map-ren'){openModal('Renommer la sauvegarde',`<input id="mpRn" class="ft" type="text" maxlength="60" value="${esc(m?m.name:'')}">`,[{label:'Annuler',fn:closeModal},{label:'Renommer',cls:'pri',fn:async()=>{const n=cleanName(mval('mpRn'),60);closeModal();if(n)done(await hostReq('rename-map',{id,name:n}));}}]);return;}
+  if(a==='map-del'){openModal('Supprimer la sauvegarde ?',`<div>« ${esc(m?m.name:'')} » sera supprimée définitivement.</div>`,[{label:'Annuler',fn:closeModal},{label:'Supprimer',cls:'pri',fn:async()=>{closeModal();done(await hostReq('delete-map',{id}));}}]);return;}
+  if(a==='map-exp'){const r=await hostReq('export-map',{id});if(!r.success)return toast(r.message||'Export impossible.');
+    const ok=await downloadJson(`${r.file.landing?'jeu':'carte'}-${fileSlug(r.file.name)}-${new Date().toISOString().slice(0,10)}.json`,r.file);if(ok)toast('Fichier exporté.');}
+}
 function renderSaves(){
   const list=S.snaps||[];const cur=S.snapCur||{armies:0,customFams:0};
   let h='<h1>Sauvegardes des fiches</h1><p class="sub">Comme pour les cartes : enregistrez l\'état de toutes les fiches (unités, légions, sections, bonus, formules), rechargez-le plus tard, ou exportez-le sur votre appareil.</p>';
   h+=`<div class="card"><div class="small" style="margin-bottom:6px">État actuel : ${cur.armies} armée(s) modifiée(s), ${cur.customFams} formule(s) créée(s)</div><div class="row" style="margin:0"><input id="snName" class="ft" type="text" maxlength="60" placeholder="Nom de la sauvegarde" style="flex:1;min-width:150px"><button class="btn pri" data-a="snap-save">💾 Enregistrer</button></div>
    <div class="row" style="margin:10px 0 0"><button class="btn" data-a="snap-export">⬇️ Exporter l'état actuel</button><button class="btn" data-a="snap-import">⬆️ Importer un fichier</button><input id="snFile" type="file" accept=".json,application/json" hidden></div></div>`;
   if(!S.snaps)return h+'<div class="hint">Chargement de la liste…</div>';
-  if(!list.length)return h+'<div class="hint">Aucune sauvegarde pour le moment.</div>';
+  if(!list.length)return h+'<div class="hint">Aucune sauvegarde pour le moment.</div>'+renderMapSaves();
   list.forEach(m=>{h+=`<div class="card"><b>${esc(m.name)}</b>${m.auto?'<span class="tag">auto</span>':''}<div class="small">${esc(fmtDate(m.savedAt))}${m.author?' · '+esc(m.author):''} · ${m.armies} armée(s) modifiée(s)</div>
     <div class="row" style="margin:8px 0 0"><button class="btn pri" data-a="snap-load" data-id="${esc(m.id)}">Charger</button><button class="btn" data-a="snap-over" data-id="${esc(m.id)}" title="Remplacer cette sauvegarde par l'état actuel">💾 Écraser</button><button class="btn" data-a="snap-ren" data-id="${esc(m.id)}">✏️</button><button class="btn" data-a="snap-exp" data-id="${esc(m.id)}">⬇️</button><button class="btn" data-a="snap-del" data-id="${esc(m.id)}">🗑️</button></div></div>`;});
-  return h;
+  return h+renderMapSaves();
 }
 function snapMeta(id){return (S.snaps||[]).find(m=>m.id===id);}
 async function snapAction(a,el){
@@ -1638,7 +1671,7 @@ function mjHelp(force){
    <ul style="margin:8px 0;padding-left:18px">
    ${li('<b>Formules</b> (onglet Formules) : double clic sur une formule pour la modifier. « Formule seule » ne change pas les lignes concernées ; « Formule + affectation » applique aussi les cases cochées de l\'arborescence (armée › légion › unité).')}
    ${li('<b>Équipes</b> (onglet Équipes) : glissez un pseudo vers une équipe, choisissez sa légion, renommez les équipes, ajoutez ou supprimez des pseudos, verrouillez équipes et légions.')}
-   ${li('<b>Sauvegardes</b> (onglet Sauvegardes) : enregistrer, charger, exporter vers votre appareil, importer un fichier.')}
+   ${li('<b>Sauvegardes</b> (onglet Sauvegardes) : trois parties — <b>fiches</b>, <b>cartes</b> (terrain seul) et <b>jeux en cours</b> (carte + débarquement ou bataille) : enregistrer, charger, écraser, renommer, exporter vers votre appareil, supprimer.')}${li('<b>📖 Règles</b> (à côté des onglets) : les règles complètes, plan déroulant et recherche ; « 📜 Fiches » pour revenir.')}
    </ul>
    <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input id="nohelp" type="checkbox" style="width:18px;height:18px"> Ne plus afficher à l'ouverture (le bouton ℹ️ reste disponible)</label></div>`,
    [{label:'Compris',cls:'pri',fn:()=>{const c=document.getElementById('nohelp');try{if(c&&c.checked)localStorage.setItem('fa2:nohelp','1');else if(!force)localStorage.removeItem('fa2:nohelp');}catch(e){}closeModal();}}]);

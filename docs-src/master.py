@@ -56,11 +56,9 @@ def insert_before(lst, text, items):
 from copy import copy
 HL = colors.HexColor('#fff1a8')
 CHANGES_SUMMARY = [
-    '<b>§ 2</b> : après le placement de bataille, disques et marqueurs + masqués (conservés) ; les triangles restent (points forts).',
-    '<b>§ 4</b> : au placement, les obstacles entre la tuile de dépôt et la tuile d’arrivée ne comptent pas ; seule la tuile d’arrivée doit être permise pour l’unité et son armée (les déplacements, eux, tiennent compte des obstacles du trajet).',
-    '<b>Cavalerie</b> (tableau des terrains, § 4, Annexe B § 6) : elle ne monte ni sur une fortification ni sur un village à toit plat, au placement comme dans tous les déplacements et charges.',
+    '<b>§ 1 — fenêtre des fiches</b> : bouton 📖 Règles à côté des onglets Armées, Formules, Équipes et Sauvegardes ; onglet Sauvegardes avec les sauvegardes des fiches, des cartes et des jeux en cours.',
 ]
-NEEDLES = ['<b>Les obstacles entre la tuile de dépôt', '<b>Une fois le placement de bataille terminé</b>', 'toit plat interdit à la cavalerie', 'ni sur un village à toit plat (au placement', 'un <b>village à toit plat</b> (elle n’y passe pas']
+NEEDLES = ['<b>Fenêtre des fiches</b>']
 
 
 def hl_par(el):
@@ -101,7 +99,7 @@ for line in ['<b>Règles générales</b> — du début de partie à la charge',
              '<b>Annexe E</b> — Le tir', '<b>Annexe F</b> — Points restant à traiter']:
     S.append(P('• ' + line, toc))
 S.append(Spacer(1, 10))
-S.append(P('Modifications depuis le dernier envoi (26/10/2026, 23 h 55)', h2))
+S.append(P('Modifications depuis le dernier envoi (27/10/2026, 1 h 55)', h2))
 S.append(P('Les passages modifiés sont <font backColor="#fff1a8">surlignés en jaune</font> dans tout le document ; les figures modifiées ont leur légende surlignée.', body))
 NOHL = ParagraphStyle('nohl', parent=bul)
 S += [Paragraph(t, NOHL, bulletText='•') for t in CHANGES_SUMMARY]
@@ -204,7 +202,9 @@ S += B(['<b>Charge échouée</b> (cas qui ne devrait pas arriver en jeu) : l’u
         '<b>Relance du général</b> : règle écrite (Annexe C), pas encore automatisée.',
         '<b>Morts-vivants</b> (peur : jet de fuite adverse +1) : appliqué à la main par le MJ.',
         '<b>Tir</b> : tir dans une mêlée (dés à 1 sur l’unité juste avant la cible sur la ligne de tir, à confirmer) ; unités alliées dans une mêlée touchées par l’artillerie (à résoudre plus tard) ; sur un 4 suivi de 1 à 3 avec vision, tuile du nouveau dé (à confirmer) (Annexe E § 11).',
-        '<b>Débordement</b> (après un tir ou au corps à corps) : règles à venir.'])
+        '<b>Débordement</b> (après un tir ou au corps à corps) : règles à venir.',
+        '<b>Figurines de grande taille</b> : pour l’instant, elles peuvent monter sur les villages à toit plat et sur les fortifications (comme l’infanterie, par la porte pour une fortification) — à confirmer.',
+        '<b>Village à toit plat</b> : pour l’instant, on peut y monter par toutes les faces de l’hexagone (pas de point de passage obligé, contrairement à la porte d’une fortification) — à confirmer.'])
 
 
 def foot(c, d):

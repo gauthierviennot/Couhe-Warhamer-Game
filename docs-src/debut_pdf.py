@@ -51,6 +51,7 @@ s+=B(['<b>Chaque joueur ne gère que ses propres unités</b> : celles de sa lég
  '<b>Étiquettes des unités</b> : seulement le <b>sigle</b> de la fiche (il, tmv…) et un <b>numéro unique</b> pour chaque joueur, jamais le nom de l’unité ; deux touchers sur l’étiquette ouvrent la fiche de l’armée ou de la légion, avec le nom.',
  'Les fenêtres sur la carte (résultats, tirs, dés) s’ouvrent <b>le plus loin possible de la zone de combat</b> ; on peut les déplacer et les fermer.',
  '<b>Mode « test et correction » du MJ</b> : le MJ peut agir pour tous les joueurs, lui compris, et c’est lui qui lance les dés. À la sortie de ce mode, il choisit de <b>conserver l’état</b> obtenu ou de <b>revenir à l’état</b> du moment où il l’a activé.',
+ '<b>Fenêtre des fiches</b> : à côté des onglets Armées, Formules, Équipes et Sauvegardes, le bouton <b>📖 Règles</b> ouvre les règles complètes (plan déroulant, recherche). L’onglet <b>Sauvegardes</b> (MJ) regroupe les sauvegardes des <b>fiches</b>, des <b>cartes</b> (terrain seul) et des <b>jeux en cours</b> (carte + débarquement ou bataille).',
  '<b>Le mode test vaut pour toutes les phases</b> (choix des zones, dépôt, placement, ordres, déplacements, tirs). Le MJ choisit le joueur qu’il incarne (ou « MJ arbitre », qui voit tout) : il voit alors le jeu comme ce joueur, et un <b>bandeau en haut de la carte</b> indique en permanence le joueur joué.'])
 
 s.append(P('2. Préparation',h2))
@@ -61,14 +62,14 @@ s.append(P('Terrains',h3))
 s.append(box([['Terrain','Déplacement','Sauvegarde (cible)','Autres effets'],
  ['Colline','—','+1 (sauf vol)','Niveau 1 pour la vision'],
  ['Forêt','−1 (sauf vol ; en charge : compte comme une tuile)','+2 (dans ou derrière)','Annule la charge de cavalerie (C) ; cache l’unité qui s’y trouve'],
- ['Fortification','cavalerie interdite','+2 (sauf vol)','Niveau +1, vue à 360°, annule C'],
+ ['Fortification','on y monte et on en descend seulement par sa <b>porte</b> (une ou deux portes), sauf vol et saut ; cavalerie et unité volante restée au sol interdites (en vol : elle peut s’y poser)','+2 (sauf vol)','Niveau +1, vue à 360°, annule C'],
  ['Marais','−1 (sauf vol ; en charge : compte comme une tuile)','—','—'],
  ['Montagne','infranchissable (sauf vol, saut), pas d’arrêt','—','Bloque toujours la vue'],
  ['Muret','—','+2','Annule C'],
  ['Pont','passage de la rivière, seulement d’une extrémité à l’autre (tuile orientée)','+2 (tir et corps à corps), cible à la sortie du pont','Annule C'],
  ['Rivière','infranchissable sauf pont, vol, saut, Saurus (BA)','—','Saurus (BA) peuvent s’y arrêter'],
- ['Route','+2 si on y termine (sauf vol ; pas en charge)','—','—'],
- ['Village','on ne s’y tient pas (sauf toit plat) ; toit plat interdit à la cavalerie','+2 autour des maisons et sur toit plat','Annule C ; toit plat : niveau +1, vue à 360°']],[24*mm,48*mm,44*mm,58*mm]))
+ ['Route (chemin)','+2 (sauf vol ; pas en charge), seulement si le déplacement <b>sans bonus</b> peut déjà se terminer sur le chemin ; les 2 tuiles de bonus se font en suivant le chemin. Un pont fait partie du chemin si un chemin touche l’une de ses deux extrémités (pont isolé : pas de bonus)','—','—'],
+ ['Village','on ne s’y tient pas (sauf toit plat) ; toit plat interdit à la cavalerie et à une unité volante restée au sol (en vol : elle peut s’y poser)','+2 autour des maisons et sur toit plat','Annule C ; toit plat : niveau +1, vue à 360°']],[24*mm,48*mm,44*mm,58*mm]))
 s.append(P('Une unité volante en vol n’a ni malus ni protection par les hauteurs (colline, fortification) et attaque un pont sans malus ; une unité qui saute attaque une fortification et un pont sans malus.',small))
 
 s.append(P('3. Débarquement',h2))
@@ -102,7 +103,7 @@ s.append(box([['Ordre','Qui','Effet'],
  ['Marche forcée','toutes','dep × 2 ; aucune attaque ; l’adversaire qui l’attaque a −2'],
  ['Tirailleur','unités T','Sur la tuile juste devant une unité alliée de corps à corps ou mixte qui la regarde, même orientation (REGLES-CHARGE § 9)']],[30*mm,44*mm,100*mm]))
 s.append(Spacer(1,4))
-s+=B(['<b>Unité volante (v, vs) :</b> à chaque ordre, « en vol » (par défaut) ou « au sol », pour tout le tour (vision, déplacement, combat). Ce choix est caché à l’adversaire.',
+s+=B(['<b>Unité volante (v, vs) :</b> pour une <b>charge</b> ou un <b>déplacement</b> (marche forcée comprise), le joueur choisit d’abord « en vol » ou « au sol » (deux boutons à côté de l’unité) : les tuiles possibles en dépendent. <b>Au sol</b>, elle se déplace comme une unité au sol et, comme la cavalerie, ne monte ni sur une fortification ni sur un village à toit plat ; <b>en vol</b>, elle peut s’y poser. Pour les autres ordres, le choix se fait juste après l’ordre (en vol par défaut). Le choix vaut pour tout le tour (vision, déplacement, combat) et reste caché à l’adversaire. Sans importance au tour de placement : la tuile d’arrivée seule compte, le trajet non.',
  '<b>Ordre du général</b> (un seul, pour le tour ; visible des joueurs de son équipe, caché à l’adversaire jusqu’à la révélation) : <b>mvt +3</b> (déplacement ou marche forcée) ou <b>charge +2</b> pour une unité désignée à portée, la sienne comprise ; ou <b>att −1</b> pour toutes les unités à portée. Portée 6 hex, 9 pour l’Empire. Plus de pouvoir si l’unité du général est détruite (REGLES-GENERAL).',
  'L’unité qui reçoit <b>mvt +3</b> ou <b>charge +2</b> se désigne en <b>touchant son chevron</b> (sur la carte), ou par « Changer d’unité » dans le panneau ; on peut en changer jusqu’à la validation des ordres.',
  '<b>Charge :</b> sur la carte, une <b>flèche rouge</b> va de l’unité qui charge vers sa cible (ligne de vue), et le <b>cheminement prévu</b> à ce moment s’affiche en pointillés jusqu’à la tuile de contact (rond blanc). Pour un déplacement ou une marche forcée, le cheminement prévu jusqu’à la destination s’affiche de la même façon. Le joueur voit tout de suite l’indication de prise à revers, de vision et les marqueurs de sauvegarde de la cible.',
@@ -126,7 +127,7 @@ s+=B(['Toutes les charges sont jouées d’abord, dans une seule file, <b>de la 
 s.append(P('8. Déplacements : les autres unités',h2))
 s+=B(['Après les charges, un <b>d10</b> par équipe (nouveau à chaque tour) désigne l’équipe qui commence ; puis les équipes déplacent leurs unités à tour de rôle.',
  '<b>Pont</b> (tuile orientée) : une unité au sol n’y entre et n’en sort que par ses deux extrémités, d’une rive à l’autre, jamais par le côté (en déplacement comme en charge).',
- 'Trajet réel : coût 1 par tuile ; forêt et marais −1 (sauf vol ; pas de surcoût en forêt pour les Elfes sylvains BA) ; route +2 si on y termine (sauf vol) ; montagne et eau selon le tableau des terrains ; une unité adverse barre le passage (sauf vol en vol et saut) ; une unité au sol peut passer sous une unité volante en vol, sans s’arrêter sur sa tuile ; la cavalerie ne monte pas sur une fortification.',
+ 'Trajet réel : coût 1 par tuile ; forêt et marais −1 (sauf vol ; pas de surcoût en forêt pour les Elfes sylvains BA) ; chemin +2 seulement si le déplacement sans bonus de chemin atteint déjà le chemin, les 2 tuiles de bonus se faisant en suivant le chemin (sauf vol) ; <b>ordre des bonus</b> : marche forcée (dep × 2), puis général (mvt +3), puis chemin (+2) — exemple : cavalerie lourde dep 3 avec mvt +3 = 6 ; chemin atteint à la 5e tuile et qui continue : arrêt au plus loin à 6 + 2 = 8 tuiles ; avec en plus la marche forcée : 3 × 2 + 3 + 2 = 11 sur le chemin ; montagne et eau selon le tableau des terrains ; une unité adverse barre le passage (sauf vol en vol et saut) ; une unité au sol peut passer sous une unité volante en vol, sans s’arrêter sur sa tuile ; la cavalerie ne monte pas sur une fortification.',
  '<b>Zone d’interdiction :</b> on ne s’arrête pas au contact d’un adversaire, sauf en charge, ou s’il y a une différence de hauteur entre les deux unités (colline, fortification, village à toit plat).',
  'Une unité avec un ordre de déplacement peut ne pas bouger.',
  '<b>Capacité de déplacement d’une unité</b> (amie ou adverse) : un appui long sur elle montre les tuiles qu’elle peut atteindre <b>depuis sa position actuelle</b> (jamais la portée du tour de placement) ; le choix secret « en vol / au sol » d’une unité adverse n’est pas révélé.'])
